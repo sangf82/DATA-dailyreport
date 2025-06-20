@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  chatbot-kpi:
+    image: tungcua86/chatbot-kpi:1.0
+    container_name: chatbot_kpi
+    ports:
+      - "5001:5001"
+    environment:
+      FLASK_ENV: production
+    volumes:
+      - ./processing.py:/app/processing.py
+      - .env:/app/.env
+    restart: unless-stopped
