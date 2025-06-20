@@ -1,0 +1,8 @@
+pandas
+plotly
+prophet
+ipywidgets 
+jupyter
+nbformat
+statsmodels
+kaleido
