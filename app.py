@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 
 from utils.post_process_to_sql import post_process_to_sql
-from utils.pre_processing import pre_process
+from utils.pre_process import pre_process
 from utils.sql_process import sql_process
 
 # Tải biến môi trường từ tệp .env
