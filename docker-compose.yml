@@ -11,4 +11,5 @@ services:
     volumes:
       - ./processing.py:/app/processing.py
       - .env:/app/.env
+      - ./utils/:/app/utils
     restart: unless-stopped
