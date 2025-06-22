@@ -1,3 +1,4 @@
+from time import strftime
 import numpy as np
 import pandas as pd
 import plotly.io as pio
@@ -12,9 +13,9 @@ class MainModel:
                  df: pd.DataFrame, 
                  date_col: str, 
                  metric_col: str, 
-                 back_range: int = 0, 
-                 forward_range: int = 0,
-                 forecast_range: int = 0):
+                 back_range: int = 90, 
+                 forward_range: int = 60,
+                 forecast_range: int = 365):
         self.df = df
         self.date_col = date_col
         self.metric_col = metric_col
@@ -283,6 +284,201 @@ class MainModel:
     
     def plot_anomalies_charts():
         pass
-    
-    def plot_forecast_charts(self):
-        pass
+
+    def plot_forecast_charts(self, 
+                         forecast_df: pd.DataFrame,
+                         today: pd.Timestamp = None,
+                         title: str = "Forecast Chart",
+                         filepath: str = "forecast_chart.png",
+                         save: bool = False):
+
+        if forecast_df.empty:
+            raise ValueError("Forecast DataFrame is empty. Please provide a valid DataFrame.")
+        
+        # Define color palette at the top for easy customization
+        COLORS = {
+            'historical': '#5D4E75',     # Historical data line (Vintage purple)
+            'forecast': '#CD853F',       # Forecast line (Vintage rust)
+            'confidence': '#8FBC8F',     # Confidence band (Vintage sage green)
+            'confidence_fill': 'rgba(143, 188, 143, 0.2)',  # Confidence fill (Transparent sage)
+            'today_marker': '#A0522D',   # Today point marker (Vintage sienna)
+            'today_border': '#8B4513',   # Today point border (Saddle brown)
+            'today_line': '#A0522D',     # Today vertical line (Vintage sienna)
+            'plot_bg': '#F5F5DC',        # Plot background (Vintage beige)
+            'paper_bg': '#F0E68C',       # Paper background (Vintage khaki)
+            'legend_bg': 'rgba(240, 230, 140, 0.9)',  # Legend background (Transparent khaki)
+            'legend_border': '#8B7355',  # Legend border (Vintage brown)
+            'grid': '#DDD8C0',           # Grid lines (Vintage cream)
+            'axis_line': '#C0B283',      # Axis lines (Vintage tan)
+            'text_dark': '#4A4A4A',      # Title & legend text (Dark gray)
+            'text_medium': '#6A6A6A'     # Axis labels (Medium gray)
+        }
+        
+        # Set today if not provided
+        if today is None:
+            today = pd.Timestamp.now().normalize()
+        
+        # Convert ds column to datetime if it's not already
+        forecast_df['ds'] = pd.to_datetime(forecast_df['ds'])
+        
+        # Use self.back_range to determine how far back to show historical data
+        back_date = today - pd.DateOffset(days=self.back_range)
+        
+        # Use self.forward_range to determine how far forward to show forecast
+        forward_date = today + pd.DateOffset(days=self.forward_range)
+        
+        # Filter data based on back_range and forward_range
+        filtered_df = forecast_df[
+            (forecast_df['ds'] >= back_date) & 
+            (forecast_df['ds'] <= forward_date)
+        ].copy()
+        
+        if filtered_df.empty:
+            raise ValueError(f"No data found in range: {back_date.date()} to {forward_date.date()}")
+        
+        # Separate historical and forecast data with connection point
+        historical_data = filtered_df[filtered_df['ds'] <= today]
+        forecast_data = filtered_df[filtered_df['ds'] >= today]  # Include today for connection
+        
+        # Create the figure
+        fig = go.Figure()
+        
+        # Add historical actual data
+        if 'y' in filtered_df.columns and len(historical_data) > 0:
+            actual_historical = historical_data.dropna(subset=['y'])
+            if len(actual_historical) > 0:
+                fig.add_trace(go.Scatter(
+                    x=actual_historical['ds'],
+                    y=actual_historical['y'],
+                    name='Historical Data',
+                    line=dict(color=COLORS['historical'], width=2),
+                    mode='lines',
+                    hovertemplate='Historical: %{y:.0f}<br>Date: %{x}<extra></extra>'
+                ))
+        
+        # Add forecast confidence intervals
+        if len(forecast_data) > 0:
+            fig.add_trace(go.Scatter(
+                x=forecast_data['ds'],
+                y=forecast_data['yhat_upper'],
+                name='Upper Bound',
+                line=dict(color=COLORS['confidence'], width=0),
+                showlegend=False,
+                hovertemplate='Upper Bound: %{y:.0f}<br>Date: %{x}<extra></extra>'
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=forecast_data['ds'],
+                y=forecast_data['yhat_lower'],
+                name='Confidence Band',
+                line=dict(color=COLORS['confidence'], width=0),
+                fill='tonexty',
+                fillcolor=COLORS['confidence_fill'],
+                showlegend=True,
+                hovertemplate='Lower Bound: %{y:.0f}<br>Date: %{x}<extra></extra>'
+            ))
+        
+        # Add forecast line
+        if len(forecast_data) > 0:
+            fig.add_trace(go.Scatter(
+                x=forecast_data['ds'],
+                y=forecast_data['yhat'],
+                name='Forecast',
+                line=dict(color=COLORS['forecast'], width=2, dash='dot'),
+                mode='lines',
+                hovertemplate='Forecast: %{y:.0f}<br>Date: %{x}<extra></extra>'
+            ))
+        
+        # Add today's marker
+        today_point = filtered_df[filtered_df['ds'] == today]
+        if len(today_point) > 0:
+            today_value = today_point['y'].iloc[0] if not pd.isna(today_point['y'].iloc[0]) else today_point['yhat'].iloc[0]
+            fig.add_trace(go.Scatter(
+                x=[today],
+                y=[today_value],
+                name='Today',
+                mode='markers',
+                marker=dict(
+                    size=12,
+                    color=COLORS['today_marker'],
+                    symbol='circle',
+                    line=dict(width=2, color=COLORS['today_border'])
+                ),
+                hovertemplate=f'Today ({today.strftime("%Y-%m-%d")})<br>Value: %{{y:.0f}}<extra></extra>'
+            ))
+        
+        # Update layout for vintage design
+        fig.update_layout(
+            title=dict(
+                text=f"{title}",
+                x=0.02,
+                font=dict(size=18, color=COLORS['text_dark'], family='Georgia')
+            ),
+            xaxis_title='',
+            yaxis_title='',
+            plot_bgcolor=COLORS['plot_bg'],
+            paper_bgcolor=COLORS['paper_bg'],
+            hovermode='x unified',
+            showlegend=True,
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=0.98,
+                xanchor="left",
+                x=1.02,
+                bgcolor=COLORS['legend_bg'],
+                bordercolor=COLORS['legend_border'],
+                borderwidth=1,
+                font=dict(size=11, color=COLORS['text_dark'])
+            ),
+            height=500,
+            margin=dict(t=60, b=40, l=40, r=140),
+            shapes=[
+                dict(
+                    type="line",
+                    x0=today,
+                    x1=today,
+                    y0=0,
+                    y1=1,
+                    yref="paper",
+                    line=dict(
+                        color=COLORS['today_line'],
+                        width=1,
+                        dash="dot"
+                    ),
+                    opacity=0.6
+                )
+            ]
+        )
+        
+        # Minimal axis styling with vintage colors
+        fig.update_xaxes(
+            showgrid=True,
+            gridwidth=0.5,
+            gridcolor=COLORS['grid'],
+            tickfont=dict(size=10, color=COLORS['text_medium']),
+            linecolor=COLORS['axis_line'],
+            tickformat='%m/%d',
+            range=[back_date, forward_date]
+        )
+        
+        fig.update_yaxes(
+            showgrid=True,
+            gridwidth=0.5,
+            gridcolor=COLORS['grid'],
+            tickfont=dict(size=10, color=COLORS['text_medium']),
+            tickformat=',',
+            linecolor=COLORS['axis_line']
+        )
+        
+        # Export to PNG if requested
+        if save:
+            name, ext = filepath.rsplit('.', 1) if '.' in filepath else (filepath, 'png')
+            filepath = f"{name}_vintage_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
+            try:
+                fig.write_image(filepath, format='png', width=1200, height=600, scale=2)
+                print(f"Forecast chart exported to: {filepath}")
+            except Exception as e:
+                print(f"[Warning] PNG export failed: {e}. Install kaleido with 'pip install kaleido'")
+
+        return fig.show()
