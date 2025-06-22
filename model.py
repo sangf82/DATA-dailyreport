@@ -103,9 +103,9 @@ class ForecastAnomalyDetector:
         return result_df
 
     def forecast_with_prophet(self, data, date_col='ds', metric_col='y',
-                              predict_periods=60, train_start=None, train_end=None,
-                              export_csv=True, csv_filename=None):
-        """Forecast using Prophet model"""
+                          predict_periods=60, train_start=None, train_end=None,
+                          export_csv=True, csv_filename=None):
+        """Advanced Prophet forecast with optimized parameters for retail/financial data"""
         if data.empty:
             raise ValueError("Input dataframe is empty")
         
@@ -131,27 +131,157 @@ class ForecastAnomalyDetector:
             raise ValueError("No data remaining after applying date filters")
         
         # Check if we have enough data points for Prophet
-        if len(df) < 2:
-            raise ValueError("Prophet requires at least 2 data points for training")
+        if len(df) < 30:  # Increased minimum for better seasonality detection
+            raise ValueError("Prophet requires at least 30 data points for reliable forecasting")
 
+        # Advanced Prophet model with optimized parameters for your data
         self.model = Prophet(
-            daily_seasonality=True,
-            weekly_seasonality=True,
-            yearly_seasonality=True
+            # Growth parameters
+            growth='linear',                    # Linear growth for merchant counts
+            
+            # Seasonality parameters
+            yearly_seasonality=True,            # Annual business cycles
+            weekly_seasonality=True,            # Weekly business patterns
+            daily_seasonality=False,            # Not needed for daily aggregated data
+            
+            # Advanced seasonality settings
+            seasonality_mode='additive',        # Additive seasonality for merchant data
+            seasonality_prior_scale=15.0,       # Higher flexibility for seasonality (default: 10)
+            
+            # Trend parameters
+            changepoint_prior_scale=0.08,       # Moderate trend flexibility (default: 0.05)
+            changepoint_range=0.9,              # Consider changepoints in 90% of data
+            n_changepoints=35,                  # More changepoints for better trend capture
+            
+            # Holiday effects
+            holidays_prior_scale=15.0,          # Higher holiday impact
+            
+            # Uncertainty and intervals
+            interval_width=0.90,                # 90% confidence intervals
+            uncertainty_samples=1500,           # More samples for better uncertainty
+            
+            # Optimization
+            mcmc_samples=0,                     # Use MAP estimation (faster)
+            stan_backend=None                   # Use default cmdstan
         )
+        
+        # Add custom seasonalities for business patterns
+        # Monthly seasonality (business cycles, promotions)
+        self.model.add_seasonality(
+            name='monthly',
+            period=30.5,
+            fourier_order=8,
+            prior_scale=12.0
+        )
+        
+        # Quarterly seasonality (quarterly business reporting)
+        self.model.add_seasonality(
+            name='quarterly',
+            period=91.25,
+            fourier_order=6,
+            prior_scale=10.0
+        )
+        
+        # Semi-annual seasonality (bi-annual business cycles)
+        self.model.add_seasonality(
+            name='semi_annual',
+            period=182.5,
+            fourier_order=4,
+            prior_scale=8.0
+        )
+        
+        # Add country-specific holidays (customize based on your region)
+        # Example for major business holidays
+        holidays = pd.DataFrame({
+            'holiday': 'major_holidays',
+            'ds': pd.to_datetime([
+                '2024-01-01', '2024-07-04', '2024-12-25',  # 2024
+                '2025-01-01', '2025-07-04', '2025-12-25',  # 2025
+                '2026-01-01', '2026-07-04', '2026-12-25'   # 2026
+            ]),
+            'lower_window': -2,  # 2 days before
+            'upper_window': 2,   # 2 days after
+        })
+        
+        # Add promotional periods (customize based on your business)
+        promo_holidays = pd.DataFrame({
+            'holiday': 'promotional_periods',
+            'ds': pd.to_datetime([
+                '2024-11-29', '2024-12-26',  # Black Friday, Boxing Day 2024
+                '2025-11-28', '2025-12-26',  # Black Friday, Boxing Day 2025
+            ]),
+            'lower_window': -3,
+            'upper_window': 7,
+        })
+        
+        # Combine holidays
+        all_holidays = pd.concat([holidays, promo_holidays], ignore_index=True)
+        self.model.holidays = all_holidays
+        
+        # Fit the model
         self.model.fit(df)
-
-        future = self.model.make_future_dataframe(periods=predict_periods, freq='D')
+        
+        # Create future dataframe with business day frequency for better predictions
+        future = self.model.make_future_dataframe(
+            periods=predict_periods, 
+            freq='D',
+            include_history=True
+        )
+        
+        # Generate forecast
         forecast = self.model.predict(future)
-
-        forecast_df = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].merge(df, on='ds', how='left')
+        
+        # Post-process forecast to ensure realistic values
+        # Ensure non-negative values for merchant counts
+        forecast['yhat'] = forecast['yhat'].clip(lower=0)
+        forecast['yhat_lower'] = forecast['yhat_lower'].clip(lower=0)
+        forecast['yhat_upper'] = forecast['yhat_upper'].clip(lower=0)
+        
+        # Create comprehensive result dataframe
+        forecast_df = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper', 
+                               'trend', 'weekly', 'yearly', 'monthly', 
+                               'quarterly', 'semi_annual']].merge(df, on='ds', how='left')
+        
+        # Calculate additional metrics
+        forecast_df['forecast_date'] = pd.Timestamp.now()
+        forecast_df['is_forecast'] = forecast_df['y'].isna()
+        forecast_df['confidence_width'] = forecast_df['yhat_upper'] - forecast_df['yhat_lower']
+        
+        # Add performance metrics for historical data
+        historical_data = forecast_df[~forecast_df['is_forecast']].copy()
+        if len(historical_data) > 0:
+            historical_data['residual'] = historical_data['y'] - historical_data['yhat']
+            historical_data['abs_error'] = abs(historical_data['residual'])
+            historical_data['pct_error'] = (historical_data['residual'] / historical_data['y'] * 100).fillna(0)
+            
+            # Add metrics to forecast_df
+            forecast_df = forecast_df.merge(
+                historical_data[['ds', 'residual', 'abs_error', 'pct_error']], 
+                on='ds', how='left'
+            )
         
         # Export to CSV if requested
         if export_csv:
             if csv_filename is None:
-                csv_filename = f"prophet_forecast_results_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                csv_filename = f"advanced_prophet_forecast_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv"
             forecast_df.to_csv(csv_filename, index=False)
-            print(f"Prophet forecast results exported to: {csv_filename}")
+            print(f"Advanced Prophet forecast results exported to: {csv_filename}")
+            
+            # Export model performance summary
+            if len(historical_data) > 0:
+                summary_filename = csv_filename.replace('.csv', '_summary.csv')
+                summary_stats = pd.DataFrame({
+                    'Metric': ['MAE', 'RMSE', 'MAPE', 'Data Points', 'Forecast Points'],
+                    'Value': [
+                        historical_data['abs_error'].mean(),
+                        (historical_data['residual'] ** 2).mean() ** 0.5,
+                        abs(historical_data['pct_error']).mean(),
+                        len(historical_data),
+                        predict_periods
+                    ]
+                })
+                summary_stats.to_csv(summary_filename, index=False)
+                print(f"Model performance summary exported to: {summary_filename}")
 
         return forecast_df, self.model
 
