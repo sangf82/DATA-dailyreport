@@ -12,26 +12,27 @@ class MainModel:
     def __init__(self, 
                  df: pd.DataFrame, 
                  date_col: str, 
-                 metric_col: str, 
+                 metric_col: str,
+                 prod_type: str,
                  back_range: int = 90, 
                  forward_range: int = 60,
                  forecast_range: int = 365):
         self.df = df
         self.date_col = date_col
         self.metric_col = metric_col
+        self.prod_type = prod_type
         self.back_range = back_range
         self.forward_range = forward_range
         self.forecast_range = forecast_range
 
     def detect_stl_anomalies(self, 
-                             type: str, 
                              start, 
                              end, 
                              threshold: float = 2.5, 
                              file_path: str = "anomalies.csv", 
                              save: bool = False):
         
-        anomaly_data = self.df[self.df['software_product'] == type].copy()
+        anomaly_data = self.df[self.df['software_product'] == self.prod_type].copy()
         
         if anomaly_data.empty:
             raise ValueError("DataFrame is empty. Please provide a valid DataFrame.")
@@ -97,7 +98,10 @@ class MainModel:
             }).reset_index(drop=True)
             
         if save:
-            name, ext = file_path.rsplit('.', 1)
+            rawname, ext = file_path.rsplit('.', 1)
+            prod = self.prod_type.lower()
+            merch = self.metric_col.lower().split('_')[0]
+            name = f"{rawname}_{prod}_{merch}"
             file_path = f"{name}_{pd.Timestamp.now().strftime('%Y%m%d')}.{ext}"
             result_df.to_csv(file_path, index=False)
             print(f"Anomaly detection results saved to {file_path}")
@@ -105,11 +109,11 @@ class MainModel:
         return result_df
     
     def forecast_with_prophet(self,
-                          type: str,
                           start: str,
                           end: str,
                           file_path: str = "forecast.csv",
-                          save: bool = False):
+                          save: bool = False,
+                          sum: bool = False,):
     
         if self.df.empty:
             raise ValueError("Input dataframe is empty")
@@ -117,7 +121,7 @@ class MainModel:
         if self.date_col not in self.df.columns or self.metric_col not in self.df.columns:
             raise ValueError(f"Columns {self.date_col} or {self.metric_col} not found in DataFrame.")
 
-        forecast_data = self.df[self.df['software_product'] == type].copy()
+        forecast_data = self.df[self.df['software_product'] == self.prod_type].copy()
         forecast_data[self.date_col] = pd.to_datetime(forecast_data[self.date_col])
         forecast_data[self.metric_col] = forecast_data[self.metric_col].ffill().bfill()
         
@@ -259,60 +263,311 @@ class MainModel:
         
         # Export to CSV if requested
         if save:
-            name, ext = file_path.rsplit('.', 1)
+            rawname, ext = file_path.rsplit('.', 1)
+            prod = self.prod_type.lower()
+            merch = self.metric_col.lower().split('_')[0]
+            name = f"{rawname}_{prod}_{merch}"
             file_path = f"{name}_{pd.Timestamp.now().strftime('%Y%m%d')}.{ext}"
             forecast_df.to_csv(file_path, index=False)
             print(f"Forecast results exported to: {file_path}")
 
-            # Export model performance summary
-            if len(historical_data) > 0:
-                summary_filename = file_path.replace('.csv', '_summary.csv')
-                summary_stats = pd.DataFrame({
-                    'Metric': ['MAE', 'RMSE', 'MAPE', 'Data Points', 'Forecast Points'],
-                    'Value': [
-                        historical_data['abs_error'].mean(),
-                        (historical_data['residual'] ** 2).mean() ** 0.5,
-                        abs(historical_data['pct_error']).mean(),
-                        len(historical_data),
-                        self.forecast_range
-                    ]
-                })
-                summary_stats.to_csv(summary_filename, index=False)
-                print(f"Model performance summary exported to: {summary_filename}")
+        # Export model performance summary
+        if len(historical_data) > 0 and sum:
+            summary_filename = file_path.replace('.csv', '_summary.csv')
+            summary_stats = pd.DataFrame({
+                'Metric': ['MAE', 'RMSE', 'MAPE', 'Data Points', 'Forecast Points'],
+                'Value': [
+                    historical_data['abs_error'].mean(),
+                    (historical_data['residual'] ** 2).mean() ** 0.5,
+                    abs(historical_data['pct_error']).mean(),
+                    len(historical_data),
+                    self.forecast_range
+                ]
+            })
+            summary_stats.to_csv(summary_filename, index=False)
+            print(f"Model performance summary exported to: {summary_filename}")
 
         return forecast_df, self.model
     
-    def plot_anomalies_charts():
-        pass
+    def plot_anomalies_charts(self,
+                     anomaly_df,  # Can be DataFrame or file path string
+                     chart_type: str = "bar",  # "bar" or "line"
+                     today: pd.Timestamp = None,
+                     title: str = None,
+                     filepath: str = "images/anomaly_chart.html",
+                     save: bool = False):
+
+        # Set today if not provided
+        if today is None:
+            today = pd.Timestamp.now().normalize()
+        
+        # Handle if anomaly_df is a file path string
+        if isinstance(anomaly_df, str):
+            try:
+                anomaly_df = pd.read_csv(anomaly_df)
+                # Convert date column to datetime
+                if 'date' in anomaly_df.columns:
+                    anomaly_df['date'] = pd.to_datetime(anomaly_df['date'])
+                else:
+                    raise ValueError("CSV file must contain a 'date' column")
+            except Exception as e:
+                raise ValueError(f"Error reading CSV file: {e}")
+        
+        # Validate DataFrame
+        if not isinstance(anomaly_df, pd.DataFrame):
+            raise ValueError("anomaly_df must be a DataFrame or a valid file path")
+        
+        if anomaly_df.empty:
+            raise ValueError("Anomaly DataFrame is empty")
+        
+        # Ensure required columns exist
+        required_columns = ['date', 'count(trend)', 'anomaly']
+        missing_columns = [col for col in required_columns if col not in anomaly_df.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns: {missing_columns}")
+        
+        # Set default title based on metric and chart type
+        if title is None:
+            metric_name = "New Merchants" if self.metric_col == "new_merchant" else "Active Merchants"
+            chart_name = "Bar Chart" if chart_type == "bar" else "Line Chart"
+            title = f"{metric_name} Anomaly Detection - {chart_name}"
+        
+        from_date = today - timedelta(days=self.back_range)
+        
+        recent_df = anomaly_df[(
+            anomaly_df['date'] >= from_date) & 
+            (anomaly_df['date'] <= today)
+        ].copy()
+        
+        if recent_df.empty:
+            print(f"Warning: No data found in date range {from_date.date()} to {today.date()}")
+            return None
+        
+        normal_points = recent_df[recent_df['anomaly'] == 0]
+        anomaly_points = recent_df[recent_df['anomaly'] == 1]
+        
+        fig = go.Figure()
+        
+        # Color scheme based on metric type
+        if self.metric_col == "new_merchant":
+            normal_color = 'lightblue'
+            anomaly_color = 'red'
+            y_title = 'New Merchant Count'
+        else:  # active_merchant
+            normal_color = 'lightgreen'
+            anomaly_color = 'orange'
+            y_title = 'Active Merchant Count'
+        
+        # Create charts based on chart_type
+        if chart_type == "bar":
+            # Bar chart implementation
+            if len(normal_points) > 0:
+                fig.add_trace(go.Bar(
+                    x=normal_points['date'],
+                    y=normal_points['count(trend)'],
+                    name='Normal Data',
+                    marker_color=normal_color,
+                    opacity=0.7,
+                    hovertemplate=f'Normal: %{{y:.0f}}<br>Date: %{{x}}<extra></extra>'
+                ))
+            if len(anomaly_points) > 0:
+                fig.add_trace(go.Bar(
+                    x=anomaly_points['date'],
+                    y=anomaly_points['count(trend)'],
+                    name='Anomalies',
+                    marker_color=anomaly_color,
+                    opacity=0.8,
+                    hovertemplate=f'Anomaly: %{{y:.0f}}<br>Date: %{{x}}<extra></extra>'
+                ))
+            
+            fig.update_layout(barmode='group')
+            
+        else:  # line chart
+            all_data = recent_df.sort_values('date')
+            
+            # Add the main trend line (similar to historical data in forecast)
+            fig.add_trace(go.Scatter(
+                x=all_data['date'],
+                y=all_data['count(trend)'],
+                name='Data Trend',
+                mode='lines',
+                line=dict(color='#1f77b4' if self.metric_col == "new_merchant" else '#2ca02c', width=2),
+                hovertemplate='Trend: %{y:.0f}<br>Date: %{x}<extra></extra>',
+                showlegend=True
+            ))
+            
+            # Add normal points as small markers
+            if len(normal_points) > 0:
+                normal_color = '#87CEEB' if self.metric_col == "new_merchant" else '#90EE90'  # Light colors
+                
+                fig.add_trace(go.Scatter(
+                    x=normal_points['date'],
+                    y=normal_points['count(trend)'],
+                    name='Normal Data',
+                    mode='markers',
+                    marker=dict(
+                        size=4,
+                        color=normal_color,
+                        line=dict(width=1, color='#1f77b4' if self.metric_col == "new_merchant" else '#2ca02c'),
+                        symbol='circle'
+                    ),
+                    hovertemplate=f'Normal: %{{y:.0f}}<br>Date: %{{x}}<extra></extra>'
+                ))
+            
+            # Add anomaly points as prominent markers (similar to today marker in forecast)
+            if len(anomaly_points) > 0:
+                anomaly_color = '#d62728' if self.metric_col == "new_merchant" else '#ff8c00'  # Red or orange
+                anomaly_border = '#8c1c13' if self.metric_col == "new_merchant" else '#cc6600'
+                
+                fig.add_trace(go.Scatter(
+                    x=anomaly_points['date'],
+                    y=anomaly_points['count(trend)'],
+                    name='Anomalies',
+                    mode='markers',
+                    marker=dict(
+                        size=12,
+                        color=anomaly_color,
+                        symbol='diamond',
+                        line=dict(width=2, color=anomaly_border)
+                    ),
+                    hovertemplate=f'⚠️ Anomaly: %{{y:.0f}}<br>Date: %{{x}}<extra></extra>'
+                ))
+                
+                # Add vertical lines for anomalies (similar to today line in forecast)
+                for _, row in anomaly_points.iterrows():
+                    fig.add_shape(
+                        type="line",
+                        x0=row['date'], x1=row['date'],
+                        y0=0, y1=1,
+                        yref="paper",
+                        line=dict(
+                            color=anomaly_color,
+                            width=1,
+                            dash="dot"
+                        ),
+                        opacity=0.6
+                    )
+
+        # Update layout with forecast chart styling
+        fig.update_layout(
+            title=dict(
+                text=f"{title}",
+                x=0.02,
+                font=dict(size=18, color='#111111', family='Georgia')
+            ),
+            xaxis_title='Date',
+            yaxis_title=y_title,
+            plot_bgcolor='#ffffff',
+            paper_bgcolor='#f5f5f5',
+            hovermode='x unified',
+            showlegend=True,
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=0.98,
+                xanchor="left",
+                x=1.02,
+                bgcolor='rgba(245, 245, 245, 0.9)',
+                bordercolor='#cccccc',
+                borderwidth=1,
+                font=dict(size=11, color='#111111')
+            ),
+            height=500,
+            margin=dict(t=60, b=40, l=40, r=140)
+        )
+
+        # Update axes with forecast chart styling
+        fig.update_xaxes(
+            showgrid=True,
+            gridwidth=0.5,
+            gridcolor='#e0e0e0',
+            tickfont=dict(size=10, color='#555555'),
+            linecolor='#a6a6a6',
+            tickformat='%m/%d',
+            range=[from_date, today]
+        )
+        
+        fig.update_yaxes(
+            showgrid=True,
+            gridwidth=0.5,
+            gridcolor='#e0e0e0',
+            tickfont=dict(size=10, color='#555555'),
+            tickformat=',',
+            linecolor='#a6a6a6'
+        )
+
+        # Add annotations for anomaly count (styled like forecast annotations)
+        anomaly_count = len(anomaly_points)
+        total_count = len(recent_df)
+        anomaly_rate = (anomaly_count / total_count * 100) if total_count > 0 else 0
+        
+        fig.add_annotation(
+            text=f"Anomalies: {anomaly_count}/{total_count} ({anomaly_rate:.1f}%)",
+            xref="paper", yref="paper",
+            x=0.02, y=0.94,  # Positioned below title
+            showarrow=False,
+            font=dict(size=12, color="#111111"),
+            bgcolor="rgba(255,255,255,0.9)",
+            bordercolor="#cccccc",
+            borderwidth=1
+        )
+
+        # Export to HTML if requested
+        if save:
+            rawname, ext = filepath.rsplit('.', 1) if '.' in filepath else (filepath, 'html')
+            prod = self.prod_type.lower()
+            merch = self.metric_col.lower().split('_')[0]
+            name = f"{rawname}_{prod}_{merch}"
+            chart_suffix = f"_{chart_type}"
+            filepath = f"{name}{chart_suffix}_{pd.Timestamp.now().strftime('%Y%m%d')}.{ext}"
+            try:
+                fig.write_html(filepath)
+                print(f"Anomaly chart exported to: {filepath}")
+            except Exception as e:
+                print(f"[Warning] HTML export failed: {e}")
+
+        return fig
 
     def plot_forecast_charts(self, 
-                         forecast_df: pd.DataFrame,
-                         today: pd.Timestamp = None,
-                         title: str = "Forecast Chart",
-                         filepath: str = "forecast_chart.png",
-                         save: bool = False):
+                        forecast_df: pd.DataFrame,
+                        chart_type: str = "line",  # "line" or "bar"
+                        today: pd.Timestamp = None,
+                        title: str = None,
+                        filepath: str = "images/forecast_chart.html",
+                        save: bool = False):
 
         if forecast_df.empty:
             raise ValueError("Forecast DataFrame is empty. Please provide a valid DataFrame.")
         
-        # Define color palette at the top for easy customization
-        COLORS = {
-            'historical': '#5D4E75',     # Historical data line (Vintage purple)
-            'forecast': '#CD853F',       # Forecast line (Vintage rust)
-            'confidence': '#8FBC8F',     # Confidence band (Vintage sage green)
-            'confidence_fill': 'rgba(143, 188, 143, 0.2)',  # Confidence fill (Transparent sage)
-            'today_marker': '#A0522D',   # Today point marker (Vintage sienna)
-            'today_border': '#8B4513',   # Today point border (Saddle brown)
-            'today_line': '#A0522D',     # Today vertical line (Vintage sienna)
-            'plot_bg': '#F5F5DC',        # Plot background (Vintage beige)
-            'paper_bg': '#F0E68C',       # Paper background (Vintage khaki)
-            'legend_bg': 'rgba(240, 230, 140, 0.9)',  # Legend background (Transparent khaki)
-            'legend_border': '#8B7355',  # Legend border (Vintage brown)
-            'grid': '#DDD8C0',           # Grid lines (Vintage cream)
-            'axis_line': '#C0B283',      # Axis lines (Vintage tan)
-            'text_dark': '#4A4A4A',      # Title & legend text (Dark gray)
-            'text_medium': '#6A6A6A'     # Axis labels (Medium gray)
-        }
+        # Set default title based on metric and chart type
+        if title is None:
+            metric_name = "New Merchants" if self.metric_col == "new_merchant" else "Active Merchants"
+            chart_name = "Line Chart" if chart_type == "line" else "Bar Chart"
+            title = f"{metric_name} Forecast - {chart_name}"
+        
+        # Define color palette based on metric type
+        if self.metric_col == "new_merchant":
+            COLORS = {
+                'historical': '#1f77b4',     # Blue
+                'forecast': '#ff7f0e',       # Orange
+                'confidence': '#2ca02c',     # Green
+                'confidence_fill': 'rgba(44, 160, 44, 0.2)',
+                'today_marker': '#d62728',   # Red
+                'today_border': '#8c1c13',
+                'today_line': '#d62728',
+            }
+            y_title = 'New Merchant Count'
+        else:  # active_merchant
+            COLORS = {
+                'historical': '#2ca02c',     # Green
+                'forecast': '#9467bd',       # Purple
+                'confidence': '#17becf',     # Cyan
+                'confidence_fill': 'rgba(23, 190, 207, 0.2)',
+                'today_marker': '#e377c2',   # Pink
+                'today_border': '#c7519c',
+                'today_line': '#e377c2',
+            }
+            y_title = 'Active Merchant Count'
         
         # Set today if not provided
         if today is None:
@@ -343,53 +598,83 @@ class MainModel:
         # Create the figure
         fig = go.Figure()
         
-        # Add historical actual data
-        if 'y' in filtered_df.columns and len(historical_data) > 0:
-            actual_historical = historical_data.dropna(subset=['y'])
-            if len(actual_historical) > 0:
+        if chart_type == "line":
+            # Line chart implementation
+            # Add historical actual data
+            if 'y' in filtered_df.columns and len(historical_data) > 0:
+                actual_historical = historical_data.dropna(subset=['y'])
+                if len(actual_historical) > 0:
+                    fig.add_trace(go.Scatter(
+                        x=actual_historical['ds'],
+                        y=actual_historical['y'],
+                        name='Historical Data',
+                        line=dict(color=COLORS['historical'], width=2),
+                        mode='lines',
+                        hovertemplate='Historical: %{y:.0f}<br>Date: %{x}<extra></extra>'
+                    ))
+            
+            # Add forecast confidence intervals
+            if len(forecast_data) > 0:
                 fig.add_trace(go.Scatter(
-                    x=actual_historical['ds'],
-                    y=actual_historical['y'],
-                    name='Historical Data',
-                    line=dict(color=COLORS['historical'], width=2),
+                    x=forecast_data['ds'],
+                    y=forecast_data['yhat_upper'],
+                    name='Upper Bound',
+                    line=dict(color=COLORS['confidence'], width=0),
+                    showlegend=False,
+                    hovertemplate='Upper Bound: %{y:.0f}<br>Date: %{x}<extra></extra>'
+                ))
+                
+                fig.add_trace(go.Scatter(
+                    x=forecast_data['ds'],
+                    y=forecast_data['yhat_lower'],
+                    name='Confidence Band',
+                    line=dict(color=COLORS['confidence'], width=0),
+                    fill='tonexty',
+                    fillcolor=COLORS['confidence_fill'],
+                    showlegend=True,
+                    hovertemplate='Lower Bound: %{y:.0f}<br>Date: %{x}<extra></extra>'
+                ))
+            
+            # Add forecast line
+            if len(forecast_data) > 0:
+                fig.add_trace(go.Scatter(
+                    x=forecast_data['ds'],
+                    y=forecast_data['yhat'],
+                    name='Forecast',
+                    line=dict(color=COLORS['forecast'], width=2, dash='dot'),
                     mode='lines',
-                    hovertemplate='Historical: %{y:.0f}<br>Date: %{x}<extra></extra>'
+                    hovertemplate='Forecast: %{y:.0f}<br>Date: %{x}<extra></extra>'
                 ))
         
-        # Add forecast confidence intervals
-        if len(forecast_data) > 0:
-            fig.add_trace(go.Scatter(
-                x=forecast_data['ds'],
-                y=forecast_data['yhat_upper'],
-                name='Upper Bound',
-                line=dict(color=COLORS['confidence'], width=0),
-                showlegend=False,
-                hovertemplate='Upper Bound: %{y:.0f}<br>Date: %{x}<extra></extra>'
-            ))
+        else:  # bar chart
+            # Bar chart implementation
+            # Add historical actual data
+            if 'y' in filtered_df.columns and len(historical_data) > 0:
+                actual_historical = historical_data.dropna(subset=['y'])
+                if len(actual_historical) > 0:
+                    fig.add_trace(go.Bar(
+                        x=actual_historical['ds'],
+                        y=actual_historical['y'],
+                        name='Historical Data',
+                        marker_color=COLORS['historical'],
+                        opacity=0.7,
+                        hovertemplate='Historical: %{y:.0f}<br>Date: %{x}<extra></extra>'
+                    ))
             
-            fig.add_trace(go.Scatter(
-                x=forecast_data['ds'],
-                y=forecast_data['yhat_lower'],
-                name='Confidence Band',
-                line=dict(color=COLORS['confidence'], width=0),
-                fill='tonexty',
-                fillcolor=COLORS['confidence_fill'],
-                showlegend=True,
-                hovertemplate='Lower Bound: %{y:.0f}<br>Date: %{x}<extra></extra>'
-            ))
+            # Add forecast bars
+            if len(forecast_data) > 0:
+                fig.add_trace(go.Bar(
+                    x=forecast_data['ds'],
+                    y=forecast_data['yhat'],
+                    name='Forecast',
+                    marker_color=COLORS['forecast'],
+                    opacity=0.8,
+                    hovertemplate='Forecast: %{y:.0f}<br>Date: %{x}<extra></extra>'
+                ))
+            
+            fig.update_layout(barmode='group')
         
-        # Add forecast line
-        if len(forecast_data) > 0:
-            fig.add_trace(go.Scatter(
-                x=forecast_data['ds'],
-                y=forecast_data['yhat'],
-                name='Forecast',
-                line=dict(color=COLORS['forecast'], width=2, dash='dot'),
-                mode='lines',
-                hovertemplate='Forecast: %{y:.0f}<br>Date: %{x}<extra></extra>'
-            ))
-        
-        # Add today's marker
+        # Add today's marker (for both chart types)
         today_point = filtered_df[filtered_df['ds'] == today]
         if len(today_point) > 0:
             today_value = today_point['y'].iloc[0] if not pd.isna(today_point['y'].iloc[0]) else today_point['yhat'].iloc[0]
@@ -407,17 +692,17 @@ class MainModel:
                 hovertemplate=f'Today ({today.strftime("%Y-%m-%d")})<br>Value: %{{y:.0f}}<extra></extra>'
             ))
         
-        # Update layout for vintage design
+        # Update layout
         fig.update_layout(
             title=dict(
                 text=f"{title}",
                 x=0.02,
-                font=dict(size=18, color=COLORS['text_dark'], family='Georgia')
+                font=dict(size=18, color='#111111', family='Georgia')
             ),
-            xaxis_title='',
-            yaxis_title='',
-            plot_bgcolor=COLORS['plot_bg'],
-            paper_bgcolor=COLORS['paper_bg'],
+            xaxis_title='Date',
+            yaxis_title=y_title,
+            plot_bgcolor='#ffffff',
+            paper_bgcolor='#f5f5f5',
             hovermode='x unified',
             showlegend=True,
             legend=dict(
@@ -426,10 +711,10 @@ class MainModel:
                 y=0.98,
                 xanchor="left",
                 x=1.02,
-                bgcolor=COLORS['legend_bg'],
-                bordercolor=COLORS['legend_border'],
+                bgcolor='rgba(245, 245, 245, 0.9)',
+                bordercolor='#cccccc',
                 borderwidth=1,
-                font=dict(size=11, color=COLORS['text_dark'])
+                font=dict(size=11, color='#111111')
             ),
             height=500,
             margin=dict(t=60, b=40, l=40, r=140),
@@ -451,13 +736,13 @@ class MainModel:
             ]
         )
         
-        # Minimal axis styling with vintage colors
+        # Update axes
         fig.update_xaxes(
             showgrid=True,
             gridwidth=0.5,
-            gridcolor=COLORS['grid'],
-            tickfont=dict(size=10, color=COLORS['text_medium']),
-            linecolor=COLORS['axis_line'],
+            gridcolor='#e0e0e0',
+            tickfont=dict(size=10, color='#555555'),
+            linecolor='#a6a6a6',
             tickformat='%m/%d',
             range=[back_date, forward_date]
         )
@@ -465,20 +750,24 @@ class MainModel:
         fig.update_yaxes(
             showgrid=True,
             gridwidth=0.5,
-            gridcolor=COLORS['grid'],
-            tickfont=dict(size=10, color=COLORS['text_medium']),
+            gridcolor='#e0e0e0',
+            tickfont=dict(size=10, color='#555555'),
             tickformat=',',
-            linecolor=COLORS['axis_line']
+            linecolor='#a6a6a6'
         )
         
-        # Export to PNG if requested
+        # Export to HTML if requested
         if save:
-            name, ext = filepath.rsplit('.', 1) if '.' in filepath else (filepath, 'png')
-            filepath = f"{name}_vintage_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
+            rawname, ext = filepath.rsplit('.', 1) if '.' in filepath else (filepath, 'html')
+            prod = self.prod_type.lower()
+            merch = self.metric_col.lower().split('_')[0]
+            name = f"{rawname}_{prod}_{merch}"
+            chart_suffix = f"_{chart_type}"
+            filepath = f"{name}{chart_suffix}_{pd.Timestamp.now().strftime('%Y%m%d')}.{ext}"
             try:
-                fig.write_image(filepath, format='png', width=1200, height=600, scale=2)
+                pio.write_html(fig, filepath, full_html=True, include_plotlyjs="cdn")
                 print(f"Forecast chart exported to: {filepath}")
             except Exception as e:
-                print(f"[Warning] PNG export failed: {e}. Install kaleido with 'pip install kaleido'")
+                print(f"[Warning] HTML export failed: {e}. Install kaleido with 'pip install kaleido'")
 
-        return fig.show()
+        return fig
