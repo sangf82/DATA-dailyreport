@@ -1,7 +1,7 @@
 from flask import Flask
 from flask_apscheduler import APScheduler
 from authentication_utils import create_client_with_app_credentials
-from google.apps import chat_v1 as google_chat
+from google.cloud import chat_v1 as google_chat
 from main_model import MainModel
 import pandas as pd
 import os

@@ -1,12 +1,9 @@
-from time import strftime
-import numpy as np
 import pandas as pd
 import plotly.io as pio
 from prophet import Prophet
 from datetime import timedelta
 import plotly.graph_objects as go
 from statsmodels.tsa.seasonal import STL
-from plotly.subplots import make_subplots
 
 class MainModel:
     def __init__(self, 
