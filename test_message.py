@@ -13,5 +13,6 @@ def final_message():
     reports = os.listdir("data/report")
     images = os.listdir("docs")
     
-    
-    pass
+    print(reports)
+
+final_message()

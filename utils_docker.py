@@ -81,6 +81,11 @@ def format_report(main_df, client_type, product):
             return False
         else:
             data, forecast_chart_path, anomalies_chart_path = result
+            
+        if client_type == 'new_merchant':
+            client_name = 'Khách hàng mới'
+        elif client_type == 'active_merchant':
+            client_name = 'Khách hàng đang hoạt động'
         
         # Hôm nay
         today_filter = (data['txn_date'] == today) & (data['software_product'] == product)
@@ -93,14 +98,14 @@ def format_report(main_df, client_type, product):
             trend = "tăng"
             diff_day = client_count_today - client_count_yesterday
             rate = diff_day / client_count_yesterday * 100 if client_count_yesterday != 0 else 0
-            insight_day = f"Số lượng {client_type} hôm nay {trend} {rate:.2f}% so với ngày hôm qua. (+ {diff_day} merchants)"
+            insight_day = f"Số lượng {client_name} hôm nay {trend} {rate:.2f}% so với ngày hôm qua. (+ {diff_day} khách)"
         elif client_count_today < client_count_yesterday:
             trend = "giảm"
             diff_day = client_count_yesterday - client_count_today
             rate = diff_day / client_count_yesterday * 100 if client_count_yesterday != 0 else 0
-            insight_day = f"Số lượng {client_type} hôm nay {trend} {rate:.2f}% so với ngày hôm qua. (- {diff_day} merchants)"
+            insight_day = f"Số lượng {client_name} hôm nay {trend} {rate:.2f}% so với ngày hôm qua. (- {diff_day} khách)"
         else:
-            insight_day = f"Số lượng {client_type} hôm nay không thay đổi so với ngày hôm qua."
+            insight_day = f"Số lượng {client_name} hôm nay không thay đổi so với ngày hôm qua."
 
         # Tuần trước
         lastweek_filter = (data['txn_date'] == today - pd.Timedelta(days=7)) & (data['software_product'] == product)
@@ -110,14 +115,14 @@ def format_report(main_df, client_type, product):
             trend = "tăng"
             diff_week = client_count_today - client_lastweek
             rate = diff_week / client_lastweek * 100 if client_lastweek != 0 else 0
-            insight_week = f"Số lượng {client_type} hôm nay {trend} {rate:.2f}% so với tuần trước. (+ {diff_week} merchants)"
+            insight_week = f"Số lượng {client_name} hôm nay {trend} {rate:.2f}% so với tuần trước. (+ {diff_week} khách)"
         elif client_count_today < client_lastweek:
             trend = "giảm"
             diff_week = client_lastweek - client_count_today
             rate = diff_week / client_lastweek * 100 if client_lastweek != 0 else 0
-            insight_week = f"Số lượng {client_type} hôm nay {trend} {rate:.2f}% so với tuần trước. (- {diff_week} merchants)"
+            insight_week = f"Số lượng {client_name} hôm nay {trend} {rate:.2f}% so với tuần trước. (- {diff_week} khách)"
         else:
-            insight_week = f"Số lượng {client_type} hôm nay không thay đổi so với tuần trước."
+            insight_week = f"Số lượng {client_name} hôm nay không thay đổi so với tuần trước."
 
         # Tháng trước
         lastmonth_filter = (data['txn_date'] == today - pd.Timedelta(days=30)) & (data['software_product'] == product)
@@ -127,16 +132,20 @@ def format_report(main_df, client_type, product):
             trend = "tăng"
             diff_month = client_count_today - client_lastmonth
             rate = diff_month / client_lastmonth * 100 if client_lastmonth != 0 else 0
-            insight_month = f"Số lượng {client_type} hôm nay {trend} {rate:.2f}% so với tháng trước. (+ {diff_month} merchants)"
+            insight_month = f"Số lượng {client_name} hôm nay {trend} {rate:.2f}% so với tháng trước. (+ {diff_month} khách)"
         elif client_count_today < client_lastmonth:
             trend = "giảm"
             diff_month = client_lastmonth - client_count_today
             rate = diff_month / client_lastmonth * 100 if client_lastmonth != 0 else 0
-            insight_month = f"Số lượng {client_type} hôm nay {trend} {rate:.2f}% so với tháng trước. (- {diff_month} merchants)"
+            insight_month = f"Số lượng {client_name} hôm nay {trend} {rate:.2f}% so với tháng trước. (- {diff_month} khách)"
         else:
-            insight_month = f"Số lượng {client_type} hôm nay không thay đổi so với tháng trước."
+            insight_month = f"Số lượng {client_name} hôm nay không thay đổi so với tháng trước."
 
-        return insight_day, insight_week, insight_month, forecast_chart_path, anomalies_chart_path
+        insight_day = insight_day.encode('utf-8').decode('utf-8')
+        insight_week = insight_week.encode('utf-8').decode('utf-8')
+        insight_month = insight_month.encode('utf-8').decode('utf-8')
+
+        return client_count_today, insight_day, insight_week, insight_month, forecast_chart_path, anomalies_chart_path
             
     except Exception as e:
         print(f"Error in format_report: {e}")
@@ -218,32 +227,53 @@ def commit_and_push(commit_message = None):
         return False
 
             
-def take_full_info(df):
+def take_full_info(df, mode: str = 'test'):
     products = df['software_product'].unique()
     client_types = ['new_merchant', 'active_merchant']
     
-    for i in range(len(products)):
-        product = products[i]
-        for j in range(len(client_types)):
-            client_type = client_types[j]
-            print(f"Processing {client_type} for {product}...")
-            result = format_report(df, client_type, product)
-            if result:
-                insight_day, insight_week, insight_month, forecast_chart_path, anomalies_chart_path = result
-                full_info = {
-                    'product': product,
-                    'client_type': client_type,
-                    'insight_day': insight_day,
-                    'insight_week': insight_week,
-                    'insight_month': insight_month,
-                    'forecast_chart_path': forecast_chart_path,
-                    'anomalies_chart_path': anomalies_chart_path
-                }
-                
-                full_info_df = pd.DataFrame([full_info])
-                full_info_df.to_json(f'data/report/{product}_{client_type}_report.json', orient='records', lines=True)
-            else:
-                print(f"Failed to process {client_type} for {product}.")
-    commit_and_push()
+    if mode == 'test':
+        product = products[0]
+        client_type = client_types[0]
+        result = format_report(df, client_type, product)
+        if result:
+            client_count, insight_day, insight_week, insight_month, forecast_chart_path, anomalies_chart_path = result
+            full_info = {
+                'product': product,
+                'client_type': client_type,
+                'client_count': client_count,
+                'insight_day': insight_day,
+                'insight_week': insight_week,
+                'insight_month': insight_month,
+                'forecast_chart_path': forecast_chart_path,
+                'anomalies_chart_path': anomalies_chart_path
+            }
+            full_info_df = pd.DataFrame([full_info])
+            full_info_df.to_json(f'data/report/{product}_{client_type}_report.json', orient='records', force_ascii=False)
+    
+    elif mode == 'prod':
+        for i in range(len(products)):
+            product = products[i]
+            for j in range(len(client_types)):
+                client_type = client_types[j]
+                print(f"Processing {client_type} for {product}...")
+                result = format_report(df, client_type, product)
+                if result:
+                    client_count, insight_day, insight_week, insight_month, forecast_chart_path, anomalies_chart_path = result
+                    full_info = {
+                        'product': product,
+                        'client_type': client_type,
+                        'client_count': client_count,
+                        'insight_day': insight_day,
+                        'insight_week': insight_week,
+                        'insight_month': insight_month,
+                        'forecast_chart_path': forecast_chart_path,
+                        'anomalies_chart_path': anomalies_chart_path
+                    }
+                    
+                    full_info_df = pd.DataFrame([full_info])
+                    full_info_df.to_json(f'data/report/{product}_{client_type}_report.json', orient='records', lines=True)
+                else:
+                    print(f"Failed to process {client_type} for {product}.")
+        commit_and_push()
         
-take_full_info(df)
+take_full_info(df, mode = 'test')

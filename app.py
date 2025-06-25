@@ -147,8 +147,12 @@ def format_report(main_df, client_type, product):
             insight_month = f"Số lượng {client_type} hôm nay {trend} {rate:.2f}% so với tháng trước. (- {diff_month} merchants)"
         else:
             insight_month = f"Số lượng {client_type} hôm nay không thay đổi so với tháng trước."
+            
+        insight_day = insight_day.encode('utf-8').decode('utf-8')
+        insight_week = insight_week.encode('utf-8').decode('utf-8')
+        insight_month = insight_month.encode('utf-8').decode('utf-8')
 
-        return insight_day, insight_week, insight_month, forecast_chart_path, anomalies_chart_path
+        return client_count_today, insight_day, insight_week, insight_month, forecast_chart_path, anomalies_chart_path
             
     except Exception as e:
         print(f"Error in format_report: {e}")
@@ -241,10 +245,11 @@ def take_full_info(df):
             print(f"Processing {client_type} for {product}...")
             result = format_report(df, client_type, product)
             if result:
-                insight_day, insight_week, insight_month, forecast_chart_path, anomalies_chart_path = result
+                client_count, insight_day, insight_week, insight_month, forecast_chart_path, anomalies_chart_path = result
                 full_info = {
                     'product': product,
                     'client_type': client_type,
+                    'client_count': client_count,
                     'insight_day': insight_day,
                     'insight_week': insight_week,
                     'insight_month': insight_month,
@@ -256,7 +261,7 @@ def take_full_info(df):
                 full_info_df.to_json(f'data/report/{product}_{client_type}_report.json', orient='records', lines=True)
             else:
                 print(f"Failed to process {client_type} for {product}.")
-    commit_and_push()
+    #commit_and_push()
            
 def final_message():
     url = os.getenv('WEBHOOK_URL')
