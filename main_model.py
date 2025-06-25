@@ -523,7 +523,7 @@ class MainModel:
                 print(f"[Warning] HTML export failed: {e}")
 
         #return fig, 
-        return filepath
+        return filepath, anomaly_rate
 
     def plot_forecast_charts(self, 
                         forecast_df: pd.DataFrame,
