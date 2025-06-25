@@ -11,8 +11,12 @@ load_dotenv()
 def final_message():
     url = os.getenv("GOOGLE_CHAT_WEBHOOK_URL")
     reports = os.listdir("data/report")
-    images = os.listdir("docs")
+    docs = os.listdir("docs")
     
+    images = []
+    
+    print(docs)
+
     print(reports)
 
 final_message()

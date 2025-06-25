@@ -226,7 +226,6 @@ def commit_and_push(commit_message = None):
         print(f"Error in commit_and_push: {e}")
         return False
 
-            
 def take_full_info(df, mode: str = 'test'):
     products = df['software_product'].unique()
     client_types = ['new_merchant', 'active_merchant']
@@ -248,7 +247,7 @@ def take_full_info(df, mode: str = 'test'):
                 'anomalies_chart_path': anomalies_chart_path
             }
             full_info_df = pd.DataFrame([full_info])
-            full_info_df.to_json(f'data/report/{product}_{client_type}_report.json', orient='records', force_ascii=False)
+            full_info_df.to_json(f'data/report/{product}_{client_type}_{pd.Timestamp.now().strftime('%Y%m%d')}_report.json', orient='records', force_ascii=False)
     
     elif mode == 'prod':
         for i in range(len(products)):
@@ -271,9 +270,9 @@ def take_full_info(df, mode: str = 'test'):
                     }
                     
                     full_info_df = pd.DataFrame([full_info])
-                    full_info_df.to_json(f'data/report/{product}_{client_type}_report.json', orient='records', lines=True)
+                    full_info_df.to_json(f'data/report/{product}_{client_type}_{pd.Timestamp.now().strftime('%Y%m%d')}_report.json', orient='records', force_ascii=False)
                 else:
                     print(f"Failed to process {client_type} for {product}.")
-        commit_and_push()
+        #commit_and_push()
         
-take_full_info(df, mode = 'test')
+take_full_info(df, mode = 'prod')
