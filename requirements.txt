@@ -1,0 +1,10 @@
+pandas
+plotly
+prophet
+nbformat
+statsmodels
+flask 
+flask_apscheduler  
+google-api-python-client
+httplib2
+python-dotenv

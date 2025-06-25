@@ -290,7 +290,7 @@ class MainModel:
                      chart_type: str = "bar",  # "bar" or "line"
                      today: pd.Timestamp = None,
                      title: str = None,
-                     filepath: str = "images/anomaly_chart.html",
+                     filepath: str = "docs/anomaly_chart.html",
                      save: bool = False):
 
         # Set today if not provided
@@ -530,7 +530,7 @@ class MainModel:
                         chart_type: str = "line",  # "line" or "bar"
                         today: pd.Timestamp = None,
                         title: str = None,
-                        filepath: str = "images/forecast_chart.html",
+                        filepath: str = "docs/forecast_chart.html",
                         save: bool = False):
 
         if forecast_df.empty:

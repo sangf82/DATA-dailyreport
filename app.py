@@ -196,32 +196,64 @@ def generate_daily_report():
                     "card": {
                         "header": {
                             "title": "📊 Daily Retail Report",
-                            "subtitle": report_date
+                            "subtitle": report_date,
+                            "imageUrl": "https://developers.google.com/chat/images/quickstart-app-avatar.png"
                         },
                         "sections": [
                             {
+                                "header": "📈 Merchant Metrics",
                                 "widgets": [
                                     {
                                         "textParagraph": {
-                                            "text": f"🏪 <b>Active:</b> {today_active:,} {active_trend} {abs(active_change):.1f}%\n🆕 <b>New:</b> {today_new:,} {new_trend} {abs(new_change):.1f}%"
+                                            "text": f"<b>🏪 Active Merchants:</b> {today_active:,}\n" +
+                                                   f"<font color='{'#34A853' if active_change > 0 else '#EA4335' if active_change < 0 else '#9AA0A6'}'>" +
+                                                   f"{'↗️' if active_change > 0 else '↘️' if active_change < 0 else '➡️'} {abs(active_change):.1f}% vs yesterday</font>"
+                                        }
+                                    },
+                                    {
+                                        "textParagraph": {
+                                            "text": f"<b>🆕 New Merchants:</b> {today_new:,}\n" +
+                                                   f"<font color='{'#34A853' if new_change > 0 else '#EA4335' if new_change < 0 else '#9AA0A6'}'>" +
+                                                   f"{'↗️' if new_change > 0 else '↘️' if new_change < 0 else '➡️'} {abs(new_change):.1f}% vs yesterday</font>"
                                         }
                                     }
                                 ]
                             },
                             {
+                                "header": "📊 Analytics & Insights",
                                 "widgets": [
                                     {
                                         "buttonList": {
                                             "buttons": [
                                                 {
-                                                    "text": "📊 Forecast",
+                                                    "text": "📈 Active Forecast",
                                                     "onClick": {
                                                         "openLink": {
                                                             "url": f"https://sangf82.github.io/divevin-swimmingclub/images/forecast_retail_active_line_{date_str}.html"
                                                         }
                                                     }
+                                                },
+                                                {
+                                                    "text": "🆕 New Forecast", 
+                                                    "onClick": {
+                                                        "openLink": {
+                                                            "url": f"https://sangf82.github.io/divevin-swimmingclub/images/forecast_retail_new_line_{date_str}.html"
+                                                        }
+                                                    }
                                                 }
                                             ]
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "header": "🔍 System Status",
+                                "widgets": [
+                                    {
+                                        "textParagraph": {
+                                            "text": f"<b>Forecast Status:</b> {'✅ Generated' if forecast_success else '❌ Failed'}\n" +
+                                                   f"<b>Anomaly Detection:</b> {'🚨 Detected' if anomaly_present else '✅ Normal'}\n" +
+                                                   f"<b>Data Updated:</b> {latest_date.strftime('%d/%m/%Y %H:%M')}"
                                         }
                                     }
                                 ]
@@ -232,92 +264,40 @@ def generate_daily_report():
             ]
         }
 
-        # Add anomaly button if anomalies detected
+        # Add anomaly buttons if anomalies detected
         if anomaly_present:
-            anomaly_button = {
-                "text": "🚨 Anomalies",
-                "onClick": {
-                    "openLink": {
-                        "url": f"https://sangf82.github.io/divevin-swimmingclub/images/anomalies_retail_active_line_{date_str}.html"
+            anomaly_section = {
+                "header": "🚨 Anomaly Detection",
+                "widgets": [
+                    {
+                        "buttonList": {
+                            "buttons": [
+                                {
+                                    "text": "🚨 Active Anomalies",
+                                    "onClick": {
+                                        "openLink": {
+                                            "url": f"https://sangf82.github.io/divevin-swimmingclub/images/anomalies_retail_active_line_{date_str}.html"
+                                        }
+                                    }
+                                },
+                                {
+                                    "text": "🚨 New Anomalies",
+                                    "onClick": {
+                                        "openLink": {
+                                            "url": f"https://sangf82.github.io/divevin-swimmingclub/images/anomalies_retail_new_line_{date_str}.html"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
                     }
-                }
+                ]
             }
-            card_message["cardsV2"][0]["card"]["sections"][1]["widgets"][0]["buttonList"]["buttons"].append(anomaly_button)
+            card_message["cardsV2"][0]["card"]["sections"].append(anomaly_section)
 
+        # Send message
         send_message(webhook_url, card_message)
-        print(f"✅ Scheduled daily report sent at {datetime.now()}")
+        print("✅ Daily report sent successfully")
         
     except Exception as e:
-        print(f"❌ Error in scheduled report: {e}")
-
-# Scheduled jobs
-@scheduler.task('cron', id='daily_report', hour=8, minute=0)
-def scheduled_daily_report():
-    print(f"🕒 Running scheduled daily report at {datetime.now()}")
-    generate_daily_report()
-
-@scheduler.task('cron', id='forecast_generation', hour=7, minute=30)
-def scheduled_forecast_generation():
-    print(f"🔮 Running scheduled forecast generation at {datetime.now()}")
-    run_forecast_and_anomaly_detection()
-
-# Routes
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({"message": "AI Chatbot Webhook with Scheduler is running!", "status": "OK"})
-
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    generate_daily_report()
-    return jsonify({"status": "Manual report sent successfully."})
-
-@app.route("/forecast", methods=["POST"])
-def run_forecast():
-    success = run_forecast_and_anomaly_detection()
-    return jsonify({"status": "Forecast completed successfully." if success else "Forecast failed."})
-
-@app.route("/scheduler/jobs", methods=["GET"])
-def list_jobs():
-    jobs = []
-    for job in scheduler.get_jobs():
-        jobs.append({
-            "id": job.id,
-            "name": job.name,
-            "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
-            "trigger": str(job.trigger)
-        })
-    return jsonify({"jobs": jobs})
-
-@app.route("/health", methods=["GET"])
-def health():
-    """Health check endpoint"""
-    try:
-        data_exists = os.path.exists("data/import/sample.csv")
-        webhook_configured = bool(os.getenv("GOOGLE_CHAT_WEBHOOK_URL"))
-        scheduler_running = scheduler.running
-        
-        os.makedirs('data/output', exist_ok=True)
-        os.makedirs('images', exist_ok=True)
-        
-        status = {
-            "status": "healthy" if all([data_exists, webhook_configured, scheduler_running]) else "unhealthy",
-            "timestamp": datetime.now().isoformat(),
-            "checks": {
-                "data_file": data_exists,
-                "webhook_configured": webhook_configured,
-                "scheduler_running": scheduler_running
-            }
-        }
-        
-        return jsonify(status), 200 if status["status"] == "healthy" else 503
-        
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-if __name__ == "__main__":
-    os.makedirs('data/output', exist_ok=True)
-    os.makedirs('images', exist_ok=True)
-    os.makedirs('logs', exist_ok=True)
-    
-    scheduler.start()
-    app.run(host="0.0.0.0", port=8080, debug=True)
+        print(f"❌ Error in generating daily report: {e}")
