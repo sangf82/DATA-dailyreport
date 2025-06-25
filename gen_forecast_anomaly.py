@@ -261,7 +261,9 @@ class GenerateForecastAndAnomalies:
         elif mode == 'prod':
             for i in range(len(products)):
                 product = products[i]
-                full_info = {}
+                full_info = {
+                    'report_date': today.strftime('%Y-%m-%d'),
+                }
                 for j in range(len(client_types)):
                     client_type = client_types[j]
                     if client_type == 'new_merchant':
@@ -273,6 +275,8 @@ class GenerateForecastAndAnomalies:
                     result = GenerateForecastAndAnomalies.format_report(df, client_type, product)
                     if result:
                         client_count, insight_day, insight_week, insight_month, forecast_chart_path, anomalies_chart_path, anomaly_rate = result
+                        forecast_path = forecast_chart_path.replace('docs/', '')
+                        anomalies_path = anomalies_chart_path.replace('docs/', '')
                         info = {
                             f'{cli}_product': product,
                             f'{cli}_client_type': client_type,
@@ -280,8 +284,8 @@ class GenerateForecastAndAnomalies:
                             f'{cli}_insight_day': insight_day,
                             f'{cli}_insight_week': insight_week,
                             f'{cli}_insight_month': insight_month,
-                            f'{cli}_forecast_chart_path': forecast_chart_path,
-                            f'{cli}_anomalies_chart_path': anomalies_chart_path,
+                            f'{cli}_forecast_chart_path': forecast_path,
+                            f'{cli}_anomalies_chart_path': anomalies_path,
                             f'{cli}_anomaly_rate': anomaly_rate
                         }
                         full_info.update(info)
@@ -292,5 +296,3 @@ class GenerateForecastAndAnomalies:
                 full_info_df.to_json(f'data/report/{product.lower()}_{pd.Timestamp.now().strftime("%Y%m%d")}_report.json', orient='records', force_ascii=False)
             if push:
                 GenerateForecastAndAnomalies.commit_and_push()
-
-GenerateForecastAndAnomalies.take_full_info(df, mode = 'prod', push = False)
