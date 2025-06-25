@@ -103,7 +103,7 @@ class MainModel:
             result_df.to_csv(file_path, index=False)
             print(f"Anomaly detection results saved to {file_path}")
             
-        return result_df
+        return result_df, file_path
     
     def forecast_with_prophet(self,
                           start: str,
@@ -132,7 +132,6 @@ class MainModel:
         if len(forecast_data) < 30:
             raise ValueError("Not enough data points for forecasting. Minimum is 30.")
         
-        # FIXED: Use 'ds' and 'y' column names for Prophet
         prophet_data = forecast_data.rename(columns={self.date_col: 'ds', self.metric_col: 'y'})
 
         #========== Training Prophet Model ==========#
@@ -284,7 +283,7 @@ class MainModel:
             summary_stats.to_csv(summary_filename, index=False)
             print(f"Model performance summary exported to: {summary_filename}")
 
-        return forecast_df, self.model
+        return forecast_df, self.model, file_path
     
     def plot_anomalies_charts(self,
                      anomaly_df,  # Can be DataFrame or file path string
@@ -523,7 +522,8 @@ class MainModel:
             except Exception as e:
                 print(f"[Warning] HTML export failed: {e}")
 
-        return fig
+        #return fig, 
+        return filepath
 
     def plot_forecast_charts(self, 
                         forecast_df: pd.DataFrame,
@@ -767,4 +767,5 @@ class MainModel:
             except Exception as e:
                 print(f"[Warning] HTML export failed: {e}. Install kaleido with 'pip install kaleido'")
 
-        return fig
+        #return fig
+        return filepath
