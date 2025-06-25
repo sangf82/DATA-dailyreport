@@ -1,303 +1,288 @@
-from flask import Flask, request, jsonify
-from flask_apscheduler import APScheduler
 import os
-import pandas as pd
+import git
 import requests
-from datetime import datetime, timedelta
+import subprocess
+import pandas as pd
 from dotenv import load_dotenv
 from main_model import MainModel
+from flask import Flask, jsonify
+from datetime import datetime, timedelta
+from flask_apscheduler import APScheduler
 
 load_dotenv()
-
 app = Flask(__name__)
 
-# Configure scheduler
 class Config:
     SCHEDULER_API_ENABLED = True
-    SCHEDULER_TIMEZONE = "Asia/Ho_Chi_Minh"
-
-app.config.from_object(Config())
+    SCHEDULER_TIMEZONE = 'Asia/Ho_Chi_Minh'
+    
+app.config.from_object(Config)
 scheduler = APScheduler()
 scheduler.init_app(app)
 
-def send_message(webhook_url, message):
-    """Send message to Google Chat"""
-    try:
-        response = requests.post(webhook_url, json=message, timeout=30)
-        response.raise_for_status()
-        print(f"✅ Message sent successfully: {response.status_code}")
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Failed to send message: {e}")
+df = pd.read_csv('data/import/sample.csv')
+today = pd.to_datetime('today').normalize()
 
-def run_forecast_and_anomaly_detection():
-    """Run forecasting and anomaly detection"""
+def run_forecast_and_anomaly_detection(raw_df, client_type, product):
     try:
-        print("🔮 Starting forecast and anomaly detection...")
+        raw_df['txn_date'] = pd.to_datetime(raw_df['txn_date'])
+        newest_date = str(raw_df['txn_date'].max())
+        oldest_date = str(raw_df['txn_date'].min())
+        td_df = raw_df.copy()
         
-        # Load data
-        df = pd.read_csv('data/import/sample.csv')
-        df['txn_date'] = pd.to_datetime(df['txn_date'])
-        today = pd.to_datetime('today').normalize()
-        newest_date = str(df['txn_date'].max())
-        oldest_date = str(df['txn_date'].min())
-        td_df = df.copy()
-
-        # Active merchant analysis
-        print("📊 Running active merchant analysis...")
-        active_model = MainModel(
-            df=td_df, 
-            date_col='txn_date', 
-            metric_col='active_merchant',
-            prod_type='Retail',
-            back_range=90,
-            forward_range=60,
-            forecast_range=365
+        model = MainModel(
+            df = td_df,
+            date_col = 'txn_date',
+            metric_col = client_type,
+            prod_type = product,
+            back_range = 90,
+            forward_range = 60,
+            forecast_range = 365
+        )
+        
+        anomalies_data, anomalies_path = model.detect_stl_anomalies(
+            start = oldest_date,
+            end = newest_date,
+            file_path = 'data/output/anomalies.csv',
+            save = True
         )
 
-        anomalies_active = active_model.detect_stl_anomalies( 
-            start=oldest_date, 
-            end=newest_date,
-            file_path=f'data/output/anomalies.csv',  
-            save=True
+        forecast_data, prophet_model, forecast_path = model.forecast_with_prophet(
+            start = oldest_date,
+            end = today,
+            file_path = 'data/output/forecast.csv',
+            save = True
+        )
+        
+        if client_type == 'new_merchant':
+            chart_type = 'bar'
+        else:
+            chart_type = 'line'
+            
+        forecast_chart_path = model.plot_forecast_charts(
+            forecast_df = forecast_data,
+            chart_type = chart_type,
+            today = today,
+            title = f"Forecast for {client_type} - {product}",
+            filepath = 'docs/forecast.html',
+            save = True
         )
 
-        forecast_active, prophet_model_active = active_model.forecast_with_prophet(
-            start=oldest_date,
-            end=today,
-            file_path=f'data/output/forecast.csv',
-            save=True
-        )
+        if 'anomaly' in anomalies_data.columns and (anomalies_data['anomaly'].astype(int) == 1).any():
+            anomalies_chart_path = model.plot_anomalies_charts(
+                anomaly_df = anomalies_data,
+                chart_type = chart_type,
+                today = today,
+                title = f"Anomalies for {client_type} - {product}",
+                filepath = 'docs/anomalies.html',
+                save = True
+            )  
+        else:
+            anomalies_chart_path = None
 
-        active_model.plot_forecast_charts(
-            forecast_df=forecast_active,
-            chart_type='line',
-            filepath=f'images/forecast.html',
-            save=True,
-        )
-
-        active_model.plot_anomalies_charts(
-            anomaly_df=anomalies_active,
-            today=today,
-            chart_type='line',
-            save=True,
-            filepath=f'images/anomalies.html'
-        )
-
-        # New merchant analysis
-        print("🆕 Running new merchant analysis...")
-        new_model = MainModel(
-            df=td_df, 
-            date_col='txn_date', 
-            metric_col='new_merchant',
-            prod_type='Retail',
-            back_range=90,
-            forward_range=60,
-            forecast_range=365
-        )
-
-        anomalies_new = new_model.detect_stl_anomalies( 
-            start=oldest_date, 
-            end=newest_date,
-            file_path=f'data/output/anomalies.csv',  
-            save=True
-        )
-
-        forecast_new, prophet_model_new = new_model.forecast_with_prophet(
-            start=oldest_date,
-            end=today,
-            file_path=f'data/output/forecast.csv',
-            save=True
-        )
-
-        new_model.plot_forecast_charts(
-            forecast_df=forecast_new,
-            chart_type='line',
-            filepath=f'images/forecast.html',
-            save=True,
-        )
-
-        new_model.plot_anomalies_charts(
-            anomaly_df=anomalies_new,
-            today=today,
-            chart_type='line',
-            save=True,
-            filepath=f'images/anomalies.html'
-        )
-
-        print("✅ Forecast and anomaly detection completed successfully")
-        return True
+        return td_df, forecast_chart_path, anomalies_chart_path
 
     except Exception as e:
-        print(f"❌ Error in forecast and anomaly detection: {e}")
+        print(f"Error in run_forecast_and_anomaly_detection: {e}")
+        return False
+    
+def format_report(main_df, client_type, product):
+    try:
+        result = run_forecast_and_anomaly_detection(main_df, client_type, product)
+        if not result:
+            return False
+        else:
+            data, forecast_chart_path, anomalies_chart_path = result
+        
+        # Hôm nay
+        today_filter = (data['txn_date'] == today) & (data['software_product'] == product)
+        client_count_today = data[today_filter][client_type].iloc[0] if len(data[today_filter]) > 0 else 0
+
+        yesterday_filter = (data['txn_date'] == today - pd.Timedelta(days=1)) & (data['software_product'] == product)
+        client_count_yesterday = data[yesterday_filter][client_type].iloc[0] if len(data[yesterday_filter]) > 0 else 0
+        
+        if client_count_today > client_count_yesterday:
+            trend = "tăng"
+            diff_day = client_count_today - client_count_yesterday
+            rate = diff_day / client_count_yesterday * 100 if client_count_yesterday != 0 else 0
+            insight_day = f"Số lượng {client_type} hôm nay {trend} {rate:.2f}% so với ngày hôm qua. (+ {diff_day} merchants)"
+        elif client_count_today < client_count_yesterday:
+            trend = "giảm"
+            diff_day = client_count_yesterday - client_count_today
+            rate = diff_day / client_count_yesterday * 100 if client_count_yesterday != 0 else 0
+            insight_day = f"Số lượng {client_type} hôm nay {trend} {rate:.2f}% so với ngày hôm qua. (- {diff_day} merchants)"
+        else:
+            insight_day = f"Số lượng {client_type} hôm nay không thay đổi so với ngày hôm qua."
+
+        # Tuần trước
+        lastweek_filter = (data['txn_date'] == today - pd.Timedelta(days=7)) & (data['software_product'] == product)
+        client_lastweek = data[lastweek_filter][client_type].iloc[0] if len(data[lastweek_filter]) > 0 else 0
+        
+        if client_count_today > client_lastweek:
+            trend = "tăng"
+            diff_week = client_count_today - client_lastweek
+            rate = diff_week / client_lastweek * 100 if client_lastweek != 0 else 0
+            insight_week = f"Số lượng {client_type} hôm nay {trend} {rate:.2f}% so với tuần trước. (+ {diff_week} merchants)"
+        elif client_count_today < client_lastweek:
+            trend = "giảm"
+            diff_week = client_lastweek - client_count_today
+            rate = diff_week / client_lastweek * 100 if client_lastweek != 0 else 0
+            insight_week = f"Số lượng {client_type} hôm nay {trend} {rate:.2f}% so với tuần trước. (- {diff_week} merchants)"
+        else:
+            insight_week = f"Số lượng {client_type} hôm nay không thay đổi so với tuần trước."
+
+        # Tháng trước
+        lastmonth_filter = (data['txn_date'] == today - pd.Timedelta(days=30)) & (data['software_product'] == product)
+        client_lastmonth = data[lastmonth_filter][client_type].iloc[0] if len(data[lastmonth_filter]) > 0 else 0
+
+        if client_count_today > client_lastmonth:
+            trend = "tăng"
+            diff_month = client_count_today - client_lastmonth
+            rate = diff_month / client_lastmonth * 100 if client_lastmonth != 0 else 0
+            insight_month = f"Số lượng {client_type} hôm nay {trend} {rate:.2f}% so với tháng trước. (+ {diff_month} merchants)"
+        elif client_count_today < client_lastmonth:
+            trend = "giảm"
+            diff_month = client_lastmonth - client_count_today
+            rate = diff_month / client_lastmonth * 100 if client_lastmonth != 0 else 0
+            insight_month = f"Số lượng {client_type} hôm nay {trend} {rate:.2f}% so với tháng trước. (- {diff_month} merchants)"
+        else:
+            insight_month = f"Số lượng {client_type} hôm nay không thay đổi so với tháng trước."
+
+        return insight_day, insight_week, insight_month, forecast_chart_path, anomalies_chart_path
+            
+    except Exception as e:
+        print(f"Error in format_report: {e}")
         return False
 
-def generate_daily_report():
-    """Generate and send daily report"""
+def setup_git_config():
     try:
-        webhook_url = os.getenv("GOOGLE_CHAT_WEBHOOK_URL")
-        if not webhook_url:
-            print("❌ GOOGLE_CHAT_WEBHOOK_URL not configured")
-            return
+        git_user_name = os.getenv('GIT_USER_NAME', '').strip()
+        git_user_email = os.getenv('GIT_USER_EMAIL', '').strip()
 
-        # Run forecast first
-        forecast_success = run_forecast_and_anomaly_detection()
+        subprocess.run(['git', 'config', '--global', 'user.name', git_user_name], check=True)
+        subprocess.run(['git', 'config', '--global', 'user.email', git_user_email], check=True)
 
-        # Load data
-        data_file_path = "data/import/sample.csv"
-        if not os.path.exists(data_file_path):
-            print("❌ Data file not found")
-            return
+        print("Git config set successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error setting up git config: {e}")
+        
+def setup_repo_auth():
+    try:
+        repo_url = os.getenv('GIT_REPO_URL', '').strip()
+        git_token = os.getenv('GIT_TOKEN', '').strip()
+        git_user = os.getenv('GIT_USER_NAME', '').strip()
 
-        df = pd.read_csv(data_file_path)
-        df['txn_date'] = pd.to_datetime(df['txn_date'])
-        
-        latest_date = df['txn_date'].max()
-        previous_date = latest_date - timedelta(days=1)
-        
-        retail_data = df[df['software_product'] == 'Retail']
-        today_data = retail_data[retail_data['txn_date'] == latest_date]
-        yesterday_data = retail_data[retail_data['txn_date'] == previous_date]
-        
-        if today_data.empty:
-            print("❌ No data found for latest date")
-            return
-            
-        # Extract metrics
-        today_active = today_data['active_merchant'].iloc[0]
-        today_new = today_data['new_merchant'].iloc[0]
-        
-        # Calculate changes
-        if not yesterday_data.empty:
-            yesterday_active = yesterday_data['active_merchant'].iloc[0]
-            yesterday_new = yesterday_data['new_merchant'].iloc[0]
-            
-            active_change = ((today_active - yesterday_active) / yesterday_active) * 100
-            new_change = ((today_new - yesterday_new) / yesterday_new) * 100
-            
-            active_trend = "tăng" if active_change > 0 else "giảm" if active_change < 0 else "➡️"
-            new_trend = "tăng" if new_change > 0 else "giảm" if new_change < 0 else "➡️"
+        if not repo_url or not git_token:
+            print('REPO_URL or GIT_TOKEN is not set in the environment variables.')
+            return None
+
+        if 'github.com' in repo_url:
+            if repo_url.startswith('https://'):
+                if '@' in repo_url:
+                    repo_url = repo_url.split('@')[-1]
+                auth_url = f"https://{git_user or 'git'}:{git_token}@{repo_url[8:]}"
+            else:
+                auth_url = repo_url
         else:
-            active_change = 0
-            new_change = 0
-            active_trend = "➡️"
-            new_trend = "➡️"
+            auth_url = repo_url
 
-        report_date = latest_date.strftime("%d/%m/%Y")
-        date_str = datetime.now().strftime('%Y%m%d')
-        
-        # Check for anomaly files
-        anomaly_present = (os.path.exists(f"data/output/anomalies_retail_active_{date_str}.csv") or 
-                          os.path.exists(f"data/output/anomalies_retail_new_{date_str}.csv"))
+        return auth_url
 
-        # Create message
-        card_message = {
-            "cardsV2": [
-                {
-                    "card": {
-                        "header": {
-                            "title": "📊 Daily Retail Report",
-                            "subtitle": report_date,
-                            "imageUrl": "https://developers.google.com/chat/images/quickstart-app-avatar.png"
-                        },
-                        "sections": [
-                            {
-                                "header": "📈 Merchant Metrics",
-                                "widgets": [
-                                    {
-                                        "textParagraph": {
-                                            "text": f"<b>🏪 Active Merchants:</b> {today_active:,}\n" +
-                                                   f"<font color='{'#34A853' if active_change > 0 else '#EA4335' if active_change < 0 else '#9AA0A6'}'>" +
-                                                   f"{'↗️' if active_change > 0 else '↘️' if active_change < 0 else '➡️'} {abs(active_change):.1f}% vs yesterday</font>"
-                                        }
-                                    },
-                                    {
-                                        "textParagraph": {
-                                            "text": f"<b>🆕 New Merchants:</b> {today_new:,}\n" +
-                                                   f"<font color='{'#34A853' if new_change > 0 else '#EA4335' if new_change < 0 else '#9AA0A6'}'>" +
-                                                   f"{'↗️' if new_change > 0 else '↘️' if new_change < 0 else '➡️'} {abs(new_change):.1f}% vs yesterday</font>"
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                "header": "📊 Analytics & Insights",
-                                "widgets": [
-                                    {
-                                        "buttonList": {
-                                            "buttons": [
-                                                {
-                                                    "text": "📈 Active Forecast",
-                                                    "onClick": {
-                                                        "openLink": {
-                                                            "url": f"https://sangf82.github.io/divevin-swimmingclub/images/forecast_retail_active_line_{date_str}.html"
-                                                        }
-                                                    }
-                                                },
-                                                {
-                                                    "text": "🆕 New Forecast", 
-                                                    "onClick": {
-                                                        "openLink": {
-                                                            "url": f"https://sangf82.github.io/divevin-swimmingclub/images/forecast_retail_new_line_{date_str}.html"
-                                                        }
-                                                    }
-                                                }
-                                            ]
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                "header": "🔍 System Status",
-                                "widgets": [
-                                    {
-                                        "textParagraph": {
-                                            "text": f"<b>Forecast Status:</b> {'✅ Generated' if forecast_success else '❌ Failed'}\n" +
-                                                   f"<b>Anomaly Detection:</b> {'🚨 Detected' if anomaly_present else '✅ Normal'}\n" +
-                                                   f"<b>Data Updated:</b> {latest_date.strftime('%d/%m/%Y %H:%M')}"
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                }
-            ]
-        }
-
-        # Add anomaly buttons if anomalies detected
-        if anomaly_present:
-            anomaly_section = {
-                "header": "🚨 Anomaly Detection",
-                "widgets": [
-                    {
-                        "buttonList": {
-                            "buttons": [
-                                {
-                                    "text": "🚨 Active Anomalies",
-                                    "onClick": {
-                                        "openLink": {
-                                            "url": f"https://sangf82.github.io/divevin-swimmingclub/images/anomalies_retail_active_line_{date_str}.html"
-                                        }
-                                    }
-                                },
-                                {
-                                    "text": "🚨 New Anomalies",
-                                    "onClick": {
-                                        "openLink": {
-                                            "url": f"https://sangf82.github.io/divevin-swimmingclub/images/anomalies_retail_new_line_{date_str}.html"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-            card_message["cardsV2"][0]["card"]["sections"].append(anomaly_section)
-
-        # Send message
-        send_message(webhook_url, card_message)
-        print("✅ Daily report sent successfully")
-        
     except Exception as e:
-        print(f"❌ Error in generating daily report: {e}")
+        print(f"Error setting up repository authentication: {e}")
+        return None
+
+def commit_and_push(commit_message = None):
+    try:
+        setup_git_config()
+
+        git_branch = os.getenv('GIT_BRANCH', 'main')
+        auth_url = setup_repo_auth()
+
+        if not auth_url:
+            print("Authentication URL is not set. Exiting commit and push.")
+            return False
+
+        repo = git.Repo('.')
+
+        if not commit_message:
+            commit_message = f"Update report {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
+        if repo.is_dirty(untracked_files=True):
+            repo.git.add('.')
+            print("Changes detected, preparing to commit...")
+
+            commit = repo.index.commit(commit_message)
+            print(f"Changes committed: {commit.hexsha[:8]} - {commit_message}")
+
+            origin = repo.remote('origin')
+            origin.set_url(auth_url)
+            print(f"Remote URL set to {auth_url}")
+
+            push_refspec = f'HEAD:{git_branch}'
+            origin.push(refspec=push_refspec)
+            print(f"Changes pushed to branch '{git_branch}'")
+
+            return True
+
+    except Exception as e:
+        print(f"Error in commit_and_push: {e}")
+        return False
+
+            
+def take_full_info(df):
+    products = df['software_product'].unique()
+    client_types = ['new_merchant', 'active_merchant']
+    
+    for i in range(len(products)):
+        product = products[i]
+        for j in range(len(client_types)):
+            client_type = client_types[j]
+            print(f"Processing {client_type} for {product}...")
+            result = format_report(df, client_type, product)
+            if result:
+                insight_day, insight_week, insight_month, forecast_chart_path, anomalies_chart_path = result
+                full_info = {
+                    'product': product,
+                    'client_type': client_type,
+                    'insight_day': insight_day,
+                    'insight_week': insight_week,
+                    'insight_month': insight_month,
+                    'forecast_chart_path': forecast_chart_path,
+                    'anomalies_chart_path': anomalies_chart_path
+                }
+                
+                full_info_df = pd.DataFrame([full_info])
+                full_info_df.to_json(f'data/report/{product}_{client_type}_report.json', orient='records', lines=True)
+            else:
+                print(f"Failed to process {client_type} for {product}.")
+    commit_and_push()
+           
+def final_message():
+    url = os.getenv('WEBHOOK_URL')
+    reports = os.listdir('data/report')
+    images = os.listdir('docs')
+    pass
+
+@scheduler.task('cron', id = 'forecast_and_anomaly_generation', hour = 7, minute = 30)
+def forecast_and_anomaly_generation():
+    print("Running daily report generation at", datetime.now())
+    take_full_info(df)
+
+@scheduler.task('cron', id = 'daily_report', hour = 8, minute = 0)
+def scheduled_daily_report():
+    print("Sending daily report at", datetime.now())
+    final_message()
+    
+@app.route("/", methods=['GET'])
+def home():
+    return  jsonify({"message": "Daily Report Webhook with Scheduler is running!", "status": "OK"})
+
+
+
+
+        
+        
+    
+        
+        
