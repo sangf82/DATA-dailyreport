@@ -48,7 +48,7 @@ def run_forecast_and_anomaly_detection(raw_df, client_type, product):
             chart_type = chart_type,
             today = today,
             title = f"Forecast for {client_type} - {product}",
-            filepath = 'images/forecast.html',
+            filepath = 'docs/forecast.html',
             save = True
         )
 
@@ -58,7 +58,7 @@ def run_forecast_and_anomaly_detection(raw_df, client_type, product):
                 chart_type = chart_type,
                 today = today,
                 title = f"Anomalies for {client_type} - {product}",
-                filepath = 'images/anomalies.html',
+                filepath = 'docs/anomalies.html',
                 save = True
             )  
         else:
