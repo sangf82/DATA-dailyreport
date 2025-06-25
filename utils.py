@@ -197,6 +197,6 @@ def take_full_info(df):
                 full_info_df.to_json(f'data/report/{product}_{client_type}_report.json', orient='records', lines=True)
             else:
                 print(f"Failed to process {client_type} for {product}.")
-        commit_and_push()
+    commit_and_push()
         
 take_full_info(df)
