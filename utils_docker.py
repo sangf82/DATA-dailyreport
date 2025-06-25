@@ -144,29 +144,36 @@ def format_report(main_df, client_type, product):
 
 def setup_git_config():
     try:
-        git_user_name = os.getenv('GIT_USER_NAME')
-        git_user_email = os.getenv('GIT_USER_EMAIL')
-        
+        git_user_name = os.getenv('GIT_USER_NAME', '').strip()
+        git_user_email = os.getenv('GIT_USER_EMAIL', '').strip()
+
         subprocess.run(['git', 'config', '--global', 'user.name', git_user_name], check=True)
         subprocess.run(['git', 'config', '--global', 'user.email', git_user_email], check=True)
-        
+
         print("Git config set successfully.")
     except subprocess.CalledProcessError as e:
         print(f"Error setting up git config: {e}")
         
 def setup_repo_auth():
     try:
-        repo_url = os.getenv('GIT_REPO_URL')
-        git_token = os.getenv('GIT_TOKEN')
+        repo_url = os.getenv('GIT_REPO_URL', '').strip()
+        git_token = os.getenv('GIT_TOKEN', '').strip()
+        git_user = os.getenv('GIT_USER_NAME', '').strip()
 
-        if not repo_url and git_token:
+        if not repo_url or not git_token:
             print('REPO_URL or GIT_TOKEN is not set in the environment variables.')
-        
+            return None
+
         if 'github.com' in repo_url:
-            auth_url = repo_url.replace('https://', f'https://{git_token}@')
+            if repo_url.startswith('https://'):
+                if '@' in repo_url:
+                    repo_url = repo_url.split('@')[-1]
+                auth_url = f"https://{git_user or 'git'}:{git_token}@{repo_url[8:]}"
+            else:
+                auth_url = repo_url
         else:
             auth_url = repo_url
-            
+
         return auth_url
 
     except Exception as e:
@@ -176,38 +183,40 @@ def setup_repo_auth():
 def commit_and_push(commit_message = None):
     try:
         setup_git_config()
-        
-        git_branch = os.getenv('GIT_BRANCH')
+
+        git_branch = os.getenv('GIT_BRANCH', 'main')
         auth_url = setup_repo_auth()
+
+        if not auth_url:
+            print("Authentication URL is not set. Exiting commit and push.")
+            return False
+
         repo = git.Repo('.')
-        
+
         if not commit_message:
             commit_message = f"Update report {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        
+
         if repo.is_dirty(untracked_files=True):
             repo.git.add('.')
             print("Changes detected, preparing to commit...")
-            
+
             commit = repo.index.commit(commit_message)
             print(f"Changes committed: {commit.hexsha[:8]} - {commit_message}")
-            
-            if auth_url:
-                try:
-                    origin = repo.remote('origin')
-                    origin.set_url(auth_url)
-                    print(f"Remote URL set to {auth_url}")
-                except Exception as e:
-                    print(f"Error setting remote URL: {e}")
-                  
+
             origin = repo.remote('origin')
+            origin.set_url(auth_url)
+            print(f"Remote URL set to {auth_url}")
+
             push_refspec = f'HEAD:{git_branch}'
             origin.push(refspec=push_refspec)
             print(f"Changes pushed to branch '{git_branch}'")
 
-            return True      
+            return True
+
     except Exception as e:
         print(f"Error in commit_and_push: {e}")
         return False
+
             
 def take_full_info(df):
     products = df['software_product'].unique()
