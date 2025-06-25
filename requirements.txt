@@ -8,3 +8,4 @@ flask_apscheduler
 google-api-python-client
 httplib2
 python-dotenv
+gitpython

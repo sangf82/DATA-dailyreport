@@ -1,5 +1,8 @@
 import pandas as pd
 from main_model import MainModel
+import git
+import subprocess
+from datetime import datetime
 
 df = pd.read_csv('data/import/sample.csv')
 today = pd.to_datetime('today').normalize()
@@ -134,7 +137,40 @@ def format_report(main_df, client_type, product):
     except Exception as e:
         print(f"Error in format_report: {e}")
         return False
-    
+
+def setup_git_config():
+    try:
+        subprocess.run(['git', 'config', '--global', 'user.name', 'sangf82'], check=True)
+        subprocess.run(['git', 'config', '--global', 'user.email', 'sluongtran@gmail.com'], check=True)
+        print("Git config set successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error setting up git config: {e}")
+
+def commit_and_push(commit_message = None):
+    try:
+        setup_git_config()
+        repo = git.Repo('.')
+        
+        if not commit_message:
+            commit_message = f"Update report {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        
+        if repo.is_dirty(untracked_files=True):
+            repo.git.add('.')
+            
+            commit = repo.index.commit(commit_message)
+            print(f"Changes committed: {commit.hexsha[:8]} - {commit_message}")
+            
+            origin = repo.remote('origin')
+            origin.push(refspec='HEAD:sang.lt_daily_report')
+            print(f"Changes pushed to branch 'sang.lt_daily_report'")
+            
+            return True
+        
+    except Exception as e:
+        print(f"Error in commit_and_push: {e}")
+        return False
+            
+ 
 def take_full_info(df):
     products = df['software_product'].unique()
     client_types = ['new_merchant', 'active_merchant']
@@ -161,5 +197,6 @@ def take_full_info(df):
                 full_info_df.to_json(f'data/report/{product}_{client_type}_report.json', orient='records', lines=True)
             else:
                 print(f"Failed to process {client_type} for {product}.")
-                
+        commit_and_push()
+        
 take_full_info(df)

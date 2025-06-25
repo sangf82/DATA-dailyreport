@@ -1,5 +1,7 @@
 import os
+import git
 import requests
+import subprocess
 import pandas as pd
 from dotenv import load_dotenv
 from main_model import MainModel
@@ -159,7 +161,39 @@ def format_report(main_df, client_type, product):
     except Exception as e:
         print(f"Error in format_report: {e}")
         return False
-    
+
+def setup_git_config():
+    try:
+        subprocess.run(['git', 'config', '--global', 'user.name', 'sangf82'], check=True)
+        subprocess.run(['git', 'config', '--global', 'user.email', 'sluongtran@gmail.com'], check=True)
+        print("Git config set successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error setting up git config: {e}")
+
+def commit_and_push(commit_message = None):
+    try:
+        setup_git_config()
+        repo = git.Repo('.')
+        
+        if not commit_message:
+            commit_message = f"Update report {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        
+        if repo.is_dirty(untracked_files=True):
+            repo.git.add('.')
+            
+            commit = repo.index.commit(commit_message)
+            print(f"Changes committed: {commit.hexsha[:8]} - {commit_message}")
+            
+            origin = repo.remote('origin')
+            origin.push(refspec='HEAD:sang.lt_daily_report')
+            print(f"Changes pushed to branch 'sang.lt_daily_report'")
+            
+            return True
+        
+    except Exception as e:
+        print(f"Error in commit_and_push: {e}")
+        return False
+  
 def take_full_info(df):
     products = df['software_product'].unique()
     client_types = ['new_merchant', 'active_merchant']
@@ -188,34 +222,10 @@ def take_full_info(df):
                 print(f"Failed to process {client_type} for {product}.")
            
 def final_message():
-    gg_chat_url = os.getenv('GOOGLE_CHAT_WEBHOOK_URL')
-    products = df['software_product'].unique()
-    client_types = ['new_merchant', 'active_merchant']
-    
-    for product in products:
-        for client_type in client_types:
-            insight_day, insight_week, insight_month, forecast_chart_path, anomalies_chart_path = format_report(df, client_type, product)
-            
-            if anomalies_chart_path.empty:
-                anomaly_present = False
-            else:
-                anomaly_present = True
-                
-            card_message = {
-                "cardV2": [
-                    {
-                        "card": {
-                            "header": {
-                                "title": f"Daily Report for {client_type} - {product}",
-                                "subtitle": f"Date: {today.strftime('%Y-%m-%d')}"
-                            },
-                            "sections": [
-                                
-                            ]
-                        }
-                    }
-                ]
-            }
+    url = os.getenv('WEBHOOK_URL')
+    reports = os.listdir('data/report')
+    images = os.listdir('docs')
+    pass
 
 @scheduler.task('cron', id = 'daily_report', hour = 7, minute = 30)
 def forecast_and_anomaly_generation():
