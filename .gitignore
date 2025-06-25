@@ -1,3 +1,2 @@
 .venv/
-*.png
-static/output/*.csv
+__pycache__/
