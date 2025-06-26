@@ -79,7 +79,7 @@ def test_report():
 def test_generation():
     """Manual trigger for testing the forecast and anomaly generation"""
     try:
-        GenerateForecastAndAnomalies.take_full_info(df, mode = 'prod', push = True)
+        GenerateForecastAndAnomalies.take_full_info(df, mode = 'prod', push = False)
         return jsonify({"message": "Test generation completed successfully!"}), 200
     except Exception as e:
         return jsonify({"error": f"Failed to generate test data: {str(e)}"}), 500

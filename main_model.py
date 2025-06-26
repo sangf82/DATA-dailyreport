@@ -536,11 +536,15 @@ class MainModel:
         if forecast_df.empty:
             raise ValueError("Forecast DataFrame is empty. Please provide a valid DataFrame.")
         
+        # Set today if not provided
+        if today is None:
+            today = pd.Timestamp.now().normalize()
+        
         # Set default title based on metric and chart type
         if title is None:
             metric_name = "New Merchants" if self.metric_col == "new_merchant" else "Active Merchants"
             chart_name = "Line Chart" if chart_type == "line" else "Bar Chart"
-            title = f"{metric_name} Forecast - {chart_name}"
+            title = f"{metric_name} Forecast - {chart_name} ({today.strftime('%Y-%m-%d')})"
         
         # Define color palette based on metric type
         if self.metric_col == "new_merchant":
@@ -565,10 +569,6 @@ class MainModel:
                 'today_line': '#e377c2',
             }
             y_title = 'Active Merchant Count'
-        
-        # Set today if not provided
-        if today is None:
-            today = pd.Timestamp.now().normalize()
         
         # Convert ds column to datetime if it's not already
         forecast_df['ds'] = pd.to_datetime(forecast_df['ds'])
