@@ -52,7 +52,6 @@ class GenerateForecastAndAnomalies:
                 forecast_df = forecast_data,
                 chart_type = chart_type,
                 today = today,
-                title = f"Forecast for {client_type} - {product}",
                 filepath = 'docs/forecast.html',
                 save = True
             )
@@ -62,7 +61,6 @@ class GenerateForecastAndAnomalies:
                     anomaly_df = anomalies_data,
                     chart_type = chart_type,
                     today = today,
-                    title = f"Anomalies for {client_type} - {product}",
                     filepath = 'docs/anomalies.html',
                     save = True
                 )  
