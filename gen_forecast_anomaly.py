@@ -256,7 +256,8 @@ class GenerateForecastAndAnomalies:
                     'anomaly_rate': anomaly_rate
                 }
                 full_info_df = pd.DataFrame([full_info])
-                full_info_df.to_json(f'data/report/{product.lower()}_{client_type}_{pd.Timestamp.now().strftime('%Y%m%d')}_report.json', orient='records', force_ascii=False)
+                timestamp_str = pd.Timestamp.now().strftime("%Y%m%d")
+                full_info_df.to_json(f'data/report/{product.lower()}_{timestamp_str}_report.json', orient='records', force_ascii=False)
 
         elif mode == 'prod':
             for i in range(len(products)):
@@ -293,6 +294,7 @@ class GenerateForecastAndAnomalies:
                         print(f"Failed to process {client_type} for {product}.")
                 
                 full_info_df = pd.DataFrame([full_info])
-                full_info_df.to_json(f'data/report/{product.lower()}_{pd.Timestamp.now().strftime("%Y%m%d")}_report.json', orient='records', force_ascii=False)
+                timestamp_str = pd.Timestamp.now().strftime("%Y%m%d")
+                full_info_df.to_json(f'data/report/{product.lower()}_{timestamp_str}_report.json', orient='records', force_ascii=False)
             if push:
                 GenerateForecastAndAnomalies.commit_and_push()

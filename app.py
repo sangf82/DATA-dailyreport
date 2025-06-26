@@ -19,7 +19,7 @@ scheduler.init_app(app)
 
 df = pd.read_csv('data/import/sample.csv')
 
-@scheduler.task('cron', id='forecast_and_anomaly_generation', hour=7, minute=30)
+@scheduler.task('cron', id='forecast_and_anomaly_generation', hour=8, minute=50)
 def forecast_and_anomaly_generation():
     print("Running daily report generation at", datetime.now())
     try:
@@ -28,12 +28,12 @@ def forecast_and_anomaly_generation():
     except Exception as e:
         print(f"Error in daily report generation: {str(e)}")
 
-@scheduler.task('cron', id='daily_report', hour=8, minute=0)
+@scheduler.task('cron', id='daily_report', hour=9, minute=0)
 def scheduled_daily_report():
     print("Sending daily report at", datetime.now())
     try:
-        final_message = FinalMessage()  # Create instance
-        final_message.final_message()  # Call method on instance
+        final_message = FinalMessage()
+        final_message.final_message()
         print("Daily report sent successfully")
     except Exception as e:
         print(f"Error sending daily report: {str(e)}")
