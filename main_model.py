@@ -326,7 +326,7 @@ class MainModel:
         if title is None:
             metric_name = "New Merchants" if self.metric_col == "new_merchant" else "Active Merchants"
             chart_name = "Bar Chart" if chart_type == "bar" else "Line Chart"
-            title = f"{metric_name} Anomaly Detection - {chart_name}"
+            title = f"{metric_name} Anomaly Detection - {chart_name} ({today.strftime('%Y-%m-%d')})"
         
         from_date = today - timedelta(days=self.back_range)
         
