@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class FinalMessage:
-    def __init__(self, mode: str = 'test'):
+    def __init__(self, mode: str):
         if mode == 'test':
             self.url = os.getenv("GOOGLE_CHAT_WEBHOOK_URL_1")
         elif mode == 'prod':
