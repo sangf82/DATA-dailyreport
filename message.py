@@ -7,8 +7,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class FinalMessage:
-    def __init__(self):
-        self.url = os.getenv("GOOGLE_CHAT_WEBHOOK_URL")
+    def __init__(self, mode: str = 'test'):
+        if mode == 'test':
+            self.url = os.getenv("GOOGLE_CHAT_WEBHOOK_URL_1")
+        elif mode == 'prod':
+            self.url = os.getenv("GOOGLE_CHAT_WEBHOOK_URL")
         self.reports = [report for report in os.listdir("data/report") if report != 'sample.txt']
     
     def generate_google_chat_card(self, report):

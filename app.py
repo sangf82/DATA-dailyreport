@@ -19,7 +19,7 @@ scheduler.init_app(app)
 
 df = pd.read_csv('data/import/sample.csv')
 
-@scheduler.task('cron', id='forecast_and_anomaly_generation', hour=9, minute=10, max_instances=1)
+@scheduler.task('cron', id='forecast_and_anomaly_generation', hour=9, minute=25, max_instances=1)
 def forecast_and_anomaly_generation():
     print("Running daily report generation at", datetime.now())
     try:
@@ -28,11 +28,11 @@ def forecast_and_anomaly_generation():
     except Exception as e:
         print(f"Error in daily report generation: {str(e)}")
 
-@scheduler.task('cron', id='daily_report', hour=9, minute=15, max_instances=1)
+@scheduler.task('cron', id='daily_report', hour=9, minute=30, max_instances=1)
 def scheduled_daily_report():
     print("Sending daily report at", datetime.now())
     try:
-        final_message = FinalMessage()
+        final_message = FinalMessage(mode = 'prod')
         final_message.final_message()
         print("Daily report sent successfully")
     except Exception as e:
@@ -69,7 +69,7 @@ def scheduler_status():
 def test_report():
     """Manual trigger for testing the report generation"""
     try:
-        final_message = FinalMessage()
+        final_message = FinalMessage(mode = 'test')
         final_message.final_message()
         return jsonify({"message": "Test report sent successfully!"}), 200
     except Exception as e:
